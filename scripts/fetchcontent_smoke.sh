@@ -214,8 +214,8 @@ block_of() { # extract the bloc-fetchcontent block (markers included) of a file
 
 variant_docs() { # FC-10
     if [ ! -f "$root/README.md" ] || ! grep -q '# >>> bloc-fetchcontent' "$root/README.md"; then
-        echo "SKIP FC-10: README.md has no bloc-fetchcontent block yet (it is written in phase 7)"
-        return 0
+        echo "FC-10: README.md has no bloc-fetchcontent block" >&2
+        return 1
     fi
     local a b
     a="$(block_of "$root/README.md")"

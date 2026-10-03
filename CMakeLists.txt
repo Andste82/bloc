@@ -94,5 +94,12 @@ if(BLOC_BUILD_TESTS)
   add_subdirectory(test) # Unity is fetched in here, never above
 endif()
 if(BLOC_BUILD_EXAMPLES)
-  add_subdirectory(examples)
+  # The examples are plain programs without the test support library. The test configurations
+  # other than "default" put hooks (assertion handler, lock) into the bloc target that only the
+  # test support provides, so the examples are built with the default configuration only.
+  if(BLOC_IS_TOP_LEVEL AND NOT BLOC_TEST_CONFIG STREQUAL "default")
+    message(STATUS "BLOC examples are skipped for BLOC_TEST_CONFIG=${BLOC_TEST_CONFIG}")
+  else()
+    add_subdirectory(examples)
+  endif()
 endif()

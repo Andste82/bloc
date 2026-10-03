@@ -197,7 +197,7 @@ jobs:
       - { name: generators,    if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh generators }
       - { name: cmake-floor,   if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh cmake-floor }
       - { name: baremetal,     if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh baremetal }
-      - { name: docs,          if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh docs }   # skips until phase 7 writes the README block
+      - { name: docs,          if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh docs }
 
   fetchcontent-online:
     needs: gate
