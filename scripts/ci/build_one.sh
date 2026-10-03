@@ -176,7 +176,15 @@ bad_undefined_symbols() { # object debug(0|1) config-header-or-empty
     local allowed=" memcpy memset "
     # Only the test hooks that the configuration header really uses are allowed.
     if [ -n "$3" ]; then
-        grep -q 'ts_assert_fail' "$3" && allowed="$allowed ts_assert_fail "
+        if grep -q 'ts_assert_fail' "$3"; then
+            allowed="$allowed ts_assert_fail "
+            # avr-gcc keeps string literals in RAM and marks an object that has some with the
+            # startup symbol __do_copy_data. The assertion messages of a debug build only become
+            # literals when a test hook receives them; the default assertion discards them.
+            case "$BLOC_CC" in
+            *avr-gcc*) [ "$2" -eq 1 ] && allowed="$allowed __do_copy_data " ;;
+            esac
+        fi
         grep -q 'ts_lock_enter' "$3" && allowed="$allowed ts_lock_enter "
         grep -q 'ts_lock_exit' "$3" && allowed="$allowed ts_lock_exit "
     fi

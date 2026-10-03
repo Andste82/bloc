@@ -3,6 +3,9 @@
 #include "ts_arena.h"
 #include "ts_assert.h"
 #include "ts_lock.h"
+#if BLOC_THREAD_SAFE && !defined(TS_LOCK_TRACER)
+#include "ts_pthread.h"
+#endif
 #include "unity.h"
 
 void ts_fill(uint8_t *p, size_t n, uint8_t seed)
@@ -70,6 +73,20 @@ size_t ts_expected_stride(size_t element_size)
     return ts_round_up(ts_expected_header() + element_size, ts_expected_storage_alignment());
 }
 
+struct bloc_handle *ts_block(const bloc_pool_t *p, size_t i)
+{
+    return (struct bloc_handle *)(void *)(p->storage +
+                                          i * ts_expected_stride((size_t)p->element_size));
+}
+
+size_t ts_round_up_pa(size_t x) { return ts_round_up(x, (size_t)BLOC_PAYLOAD_ALIGNMENT); }
+
+size_t ts_element_size_aligned(void)
+{
+    size_t e = (size_t)BLOC_PAYLOAD_ALIGNMENT * 8u;
+    return e < 32u ? 32u : e;
+}
+
 void ts_test_setup(void)
 {
     ts_arena_reset();
@@ -82,4 +99,9 @@ void ts_test_teardown(void)
     ts_arena_check();
     ts_assert_check();
     ts_lock_check();
+#if BLOC_THREAD_SAFE && !defined(TS_LOCK_TRACER)
+    /* The pthread configuration has no tracer; its mutex counters give the lock balance. */
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(ts_pthread_locks, ts_pthread_unlocks,
+                                   "pthread mutex locks and unlocks differ");
+#endif
 }

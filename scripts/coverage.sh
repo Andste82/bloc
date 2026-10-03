@@ -29,9 +29,11 @@ for cfg in $configs; do
     # Stale counters from an earlier run would hide missing coverage.
     find "$root/build/cov-$cfg" -name '*.gcda' -delete
     ctest --preset "cov-$cfg"
+    # The explicit search path keeps gcovr from scanning the repository root, which would merge
+    # the counters of every other build directory into this report.
     gcovr --root . --filter 'src/' --object-directory "build/cov-$cfg" \
         --exclude-unreachable-branches \
         --fail-under-line 100 --fail-under-branch 100 --fail-under-function 100 \
-        --txt --html-details "build/cov-$cfg/coverage.html"
+        --txt --html-details "build/cov-$cfg/coverage.html" "build/cov-$cfg"
     cp "$root/build/cov-$cfg/coverage.html" "$root/build/coverage/$cfg.html"
 done

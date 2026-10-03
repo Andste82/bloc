@@ -112,7 +112,7 @@ check_host() { # NH-01, NH-02
 }
 
 check_target() { # EM-03
-    local t="$1" dir
+    local t="$1" dir opt
     bloc_target "$t"
     if [ "$BLOC_KIND" != emulated ]; then
         echo "--target expects an emulated target, got $t ($BLOC_KIND)" >&2
@@ -129,9 +129,11 @@ check_target() { # EM-03
     fi
     dir="$root/build/nohp/$t-defassert"
     bloc_write_defassert_header "$dir"
-    check_object "EM-03 $t default (MinSizeRel)" "$BLOC_CC" "$BLOC_NM" gcc -Os "" 0 0 || rc=1
-    check_object "EM-03 $t debug with default assert (MinSizeRel)" "$BLOC_CC" "$BLOC_NM" gcc -Os \
-        cfg_debug_defassert.h 0 0 "-I$dir" || rc=1
+    opt="-Os"
+    check_object "EM-03 $t default (MinSizeRel)" "$BLOC_CC" "$BLOC_NM" gcc "$opt" "" 0 0 || rc=1
+    # BLOC_DEBUG = 1 may reference the unsigned division and modulo helpers (R-03).
+    check_object "EM-03 $t debug with default assert (MinSizeRel)" "$BLOC_CC" "$BLOC_NM" gcc \
+        "$opt" cfg_debug_defassert.h 0 1 "-I$dir" || rc=1
 }
 
 case "$mode" in

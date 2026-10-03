@@ -6,6 +6,32 @@
 #include <stdint.h>
 
 #include "bloc.h"
+#include "ts_assert.h"
+#include "ts_lock.h"
+
+/* 1 if the lock tracer is active: thread safety is on and the configuration uses ts_lock. */
+#if BLOC_THREAD_SAFE && defined(TS_LOCK_TRACER)
+#define TS_HAVE_TRACER 1
+#else
+#define TS_HAVE_TRACER 0
+#endif
+
+/* Runs stmt and, where the lock tracer is active, asserts that it entered the lock n times. */
+#if TS_HAVE_TRACER
+#define TS_LOCKS(n, stmt) TS_EXPECT_LOCKS(n, stmt)
+#else
+#define TS_LOCKS(n, stmt) stmt
+#endif
+
+/*
+ * Runs stmt, which must trigger a BLOC check that asserts in debug builds: exactly one assertion
+ * (outside the lock) in a BLOC_DEBUG configuration, none otherwise.
+ */
+#if BLOC_DEBUG
+#define TS_CHK_ASSERT(stmt) TS_EXPECT_ASSERT(stmt)
+#else
+#define TS_CHK_ASSERT(stmt) TS_EXPECT_NO_ASSERT(stmt)
+#endif
 
 /* Writes the pattern seed, seed+1, ... into p[0..n). */
 void ts_fill(uint8_t *p, size_t n, uint8_t seed);
@@ -29,6 +55,16 @@ void ts_pool_setup(bloc_pool_t *p, bloc_count_t n, bloc_size_t e);
 size_t ts_expected_storage_alignment(void);
 size_t ts_expected_header(void);
 size_t ts_expected_stride(size_t element_size);
+
+/* Block i of an initialized pool, computed from the expected stride and the storage base. */
+struct bloc_handle *ts_block(const bloc_pool_t *p, size_t i);
+
+/* Largest of the values 32 and 8 * BLOC_PAYLOAD_ALIGNMENT: an element size that is a multiple of
+ * PA. */
+size_t ts_element_size_aligned(void);
+
+/* Smallest multiple of the payload alignment that is >= x, computed without bit masks. */
+size_t ts_round_up_pa(size_t x);
 
 /* setUp() / tearDown() bodies shared by every test file. */
 void ts_test_setup(void);

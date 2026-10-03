@@ -66,7 +66,8 @@
  * continues as described in the specification, section 13.
  */
 #ifndef BLOC_PLATFORM_ASSERT
-#if defined(__GNUC__) || defined(__clang__)
+/* avr-gcc has no trap instruction: __builtin_trap() becomes a call to abort() there. */
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(__AVR__)
 #define BLOC_PLATFORM_ASSERT(msg)                                                                  \
     do {                                                                                           \
         (void)(msg);                                                                               \

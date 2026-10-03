@@ -18,8 +18,8 @@ permissions:
   contents: read
 
 # Jobs listed in ci-ok.needs are required; the others are informational until the phase of the
-# implementation plan that adds them (coverage, no-heap and baremetal in phase 2, sanitize and lto
-# in phase 5, fetchcontent-online in phase 6).
+# implementation plan that adds them (sanitize and lto in phase 5, fetchcontent-online in phase 6;
+# coverage, no-heap and baremetal are required since phase 2).
 jobs:
   gate:
     runs-on: ubuntu-latest
@@ -216,8 +216,8 @@ jobs:
   ci-ok:
     if: always()
     # Final state after phase 6: [gate, host, emulated, baremetal, coverage, sanitize, lto, no-heap,
-    # fetchcontent, fetchcontent-online]. Phase 0 requires only the jobs below.
-    needs: [gate, host, emulated, fetchcontent]
+    # fetchcontent, fetchcontent-online]. Phase 2 requires the jobs below.
+    needs: [gate, host, emulated, baremetal, coverage, no-heap, fetchcontent]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

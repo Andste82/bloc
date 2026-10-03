@@ -34,7 +34,8 @@ endfunction()
 
 # Test support library (section 5 of the implementation plan).
 set(_bloc_support_sources
-  support/ts_arena.c support/ts_assert.c support/ts_lock.c support/ts_helpers.c support/ts_pool.c)
+  support/ts_arena.c support/ts_assert.c support/ts_lock.c support/ts_helpers.c support/ts_pool.c
+  support/ts_snap.c)
 if(BLOC_TEST_CONFIG STREQUAL "pthread")
   list(APPEND _bloc_support_sources support/ts_pthread.c)
 endif()
