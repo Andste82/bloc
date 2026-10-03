@@ -70,7 +70,10 @@ set(_bloc_warning_flags
     -Wstrict-prototypes -Wmissing-prototypes -Wcast-align -fno-common)
 target_compile_options(bloc PRIVATE
   "$<$<C_COMPILER_ID:GNU,Clang>:${_bloc_warning_flags}>"
-  $<$<C_COMPILER_ID:GNU>:-Wcast-align=strict>)
+  $<$<C_COMPILER_ID:GNU>:-Wcast-align=strict>
+  # Clang lowers a memset call to __aeabi_memclr on ARM EABI targets, but the library may
+  # reference only memcpy and memset (R-03). PRIVATE, so it never reaches a consumer (CM-02).
+  $<$<C_COMPILER_ID:Clang>:-fno-builtin-memset>)
 if(BLOC_WERROR)
   target_compile_options(bloc PRIVATE $<$<C_COMPILER_ID:GNU,Clang>:-Werror>)
 endif()

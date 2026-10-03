@@ -147,7 +147,9 @@ if(SMOKE_MISMATCH)
   add_executable(smoke_mismatch main.c)
   target_link_libraries(smoke_mismatch PRIVATE bloc::bloc)
   target_compile_options(smoke_mismatch PRIVATE ${_smoke_strict_flags})
-  target_compile_definitions(smoke_mismatch PRIVATE "BLOC_CONFIG_HEADER=\"smoke_opts.h\"")
+  # SMOKE_MISMATCH keeps main.c from calling bloc_pool_get_stats, which the default-configured
+  # library does not provide, so that the executable still links and fails at check 2.
+  target_compile_definitions(smoke_mismatch PRIVATE "BLOC_CONFIG_HEADER=\"smoke_opts.h\"" SMOKE_MISMATCH=1)
   target_include_directories(smoke_mismatch PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/config")
   add_test(NAME smoke_mismatch COMMAND smoke_mismatch)
   set_tests_properties(smoke_mismatch PROPERTIES WILL_FAIL TRUE)
