@@ -7,6 +7,7 @@ unsigned ts_assert_count;
 unsigned ts_assert_unexpected;
 int ts_assert_lock_depth;
 const char *ts_assert_last_msg;
+unsigned ts_assert_locked;
 
 static int ts_assert_expected;
 
@@ -15,6 +16,9 @@ void ts_assert_fail(const char *msg)
     ts_assert_count++;
     ts_assert_last_msg = msg;
     ts_assert_lock_depth = ts_lock_depth;
+    if (ts_lock_depth != 0) {
+        ts_assert_locked++;
+    }
     if (!ts_assert_expected) {
         ts_assert_unexpected++;
     }
@@ -26,12 +30,14 @@ void ts_assert_reset(void)
     ts_assert_unexpected = 0u;
     ts_assert_lock_depth = 0;
     ts_assert_last_msg = 0;
+    ts_assert_locked = 0u;
     ts_assert_expected = 0;
 }
 
 void ts_assert_check(void)
 {
     TEST_ASSERT_EQUAL_UINT_MESSAGE(0u, ts_assert_unexpected, "unexpected BLOC assertion");
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(0u, ts_assert_locked, "BLOC assertion fired with the lock held");
 }
 
 void ts_assert_expect_begin(void)

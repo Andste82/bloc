@@ -13,6 +13,7 @@ extern unsigned ts_assert_count;       /* assertions since the last reset or exp
 extern unsigned ts_assert_unexpected;  /* assertions fired outside TS_EXPECT_ASSERT           */
 extern int ts_assert_lock_depth;       /* lock depth when the last assertion fired            */
 extern const char *ts_assert_last_msg; /* message of the last assertion, or NULL              */
+extern unsigned ts_assert_locked;      /* assertions that fired with the lock held (DBG-12)   */
 
 /* Clears all assertion bookkeeping. Called from setUp(). */
 void ts_assert_reset(void);

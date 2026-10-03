@@ -3,6 +3,7 @@
 #include "unity.h"
 
 int ts_lock_depth;
+int ts_lock_max_depth;
 unsigned ts_lock_enters;
 unsigned ts_lock_nesting_errors;
 unsigned ts_lock_token_errors;
@@ -17,6 +18,9 @@ int ts_lock_enter(void)
         ts_lock_nesting_errors++;
     }
     ts_lock_depth++;
+    if (ts_lock_depth > ts_lock_max_depth) {
+        ts_lock_max_depth = ts_lock_depth;
+    }
     ts_lock_enters++;
     ts_lock_token = (int)(ts_lock_enters & 0x7fffu) + 1;
     return ts_lock_token;
@@ -40,6 +44,7 @@ void ts_lock_exit(int token)
 void ts_lock_reset(void)
 {
     ts_lock_depth = 0;
+    ts_lock_max_depth = 0;
     ts_lock_enters = 0u;
     ts_lock_nesting_errors = 0u;
     ts_lock_token_errors = 0u;
