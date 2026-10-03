@@ -1,4 +1,4 @@
-# BLOC — Buffer Lifetime & Ownership Control
+# BLOC — Buffer Lifetime & Offset Control
 
 Specification V1, revision 4 · 2026-10-03 · Andreas Steinbart
 
@@ -7,6 +7,8 @@ This document is normative. Words such as *must*, *must not* and *may* are requi
 ## 1. Overview
 
 BLOC is a small, deterministic, heap-free C11 library for fixed-size, reference-counted buffers with headroom, alignment and zero-copy header manipulation. It targets embedded systems where predictable memory use and low overhead matter.
+
+The name says what BLOC controls: the **lifetime** of each buffer through reference counting (section 9), and its **offset**, the payload position inside a fixed block that headroom and zero-copy header operations move (section 10).
 
 Typical uses: network packets, protocol messages, DMA buffers, serial data, application messages and temporary binary data.
 

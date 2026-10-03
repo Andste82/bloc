@@ -1,2 +1,2 @@
 # bloc
-BLOC - Buffer Lifetime &amp; Ownership Control
+BLOC - Buffer Lifetime &amp; Offset Control
