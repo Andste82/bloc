@@ -52,3 +52,7 @@ rv64imac-gcc riscv64-unknown-elf-gcc wide riscv64-unknown-elf-gcc_(14.2.0+19)_14
 atmega328p-gcc avr-gcc default avr-gcc_(GCC)_14.3.0 1466
 atmega328p-gcc avr-gcc nochecks avr-gcc_(GCC)_14.3.0 1048
 atmega328p-gcc avr-gcc debug-defassert avr-gcc_(GCC)_14.3.0 2860
+host gcc default gcc_(Ubuntu_15.2.0-16ubuntu1)_15.2.0 1270
+host gcc nochecks gcc_(Ubuntu_15.2.0-16ubuntu1)_15.2.0 821
+host gcc debug-defassert gcc_(Ubuntu_15.2.0-16ubuntu1)_15.2.0 2404
+host gcc wide gcc_(Ubuntu_15.2.0-16ubuntu1)_15.2.0 1489

@@ -26,9 +26,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - run: scripts/ci/apt_install.sh build-essential cmake ninja-build clang-format
+      - run: scripts/ci/apt_install.sh build-essential cmake ninja-build clang-format shellcheck
       - name: format
         run: find include src test examples -name '*.[ch]' -print0 | xargs -0 clang-format --dry-run --Werror
+      - name: shellcheck
+        run: shellcheck -x scripts/*.sh scripts/ci/*.sh
       - name: no-heap grep (NH-03)
         run: scripts/check_no_heap.sh --grep-only
       - name: build default (tests compiled, not run)

@@ -220,12 +220,18 @@ void test_TS_01_length_operations(void)
     ROW("remove_header", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_remove_header(b, 1u)));
     ROW("add_header", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_add_header(b, 1u)));
 #if BLOC_CHECKS
-    ROW("set_len bounds", 0, TS_CHK_ASSERT((void)bloc_set_len(b, SIZE_MAX_V)));
-    ROW("remove_header bounds", 0, TS_CHK_ASSERT((void)bloc_remove_header(b, SIZE_MAX_V)));
-    ROW("add_header bounds", 0, TS_CHK_ASSERT((void)bloc_add_header(b, SIZE_MAX_V)));
-    ROW("set_len NULL", 0, TS_CHK_ASSERT((void)bloc_set_len(NULL, 0u)));
-    ROW("remove_header NULL", 0, TS_CHK_ASSERT((void)bloc_remove_header(NULL, 0u)));
-    ROW("add_header NULL", 0, TS_CHK_ASSERT((void)bloc_add_header(NULL, 0u)));
+    ROW("set_len bounds", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_set_len(b, SIZE_MAX_V))));
+    ROW("remove_header bounds", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_remove_header(b, SIZE_MAX_V))));
+    ROW("add_header bounds", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_add_header(b, SIZE_MAX_V))));
+    ROW("set_len NULL", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_set_len(NULL, 0u))));
+    ROW("remove_header NULL", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_remove_header(NULL, 0u))));
+    ROW("add_header NULL", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_add_header(NULL, 0u))));
 #endif
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
 }
@@ -252,17 +258,31 @@ void test_TS_01_copy_append_prepend(void)
     ROW("prepend", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_prepend(b, a, 2u)));
     ROW("prepend_data", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_prepend_data(b, buf, 2u)));
 #if BLOC_CHECKS
-    ROW("copy_from bounds", 0, TS_CHK_ASSERT((void)bloc_copy_from(a, buf, SIZE_MAX_V)));
-    ROW("copy_to bounds", 0, TS_CHK_ASSERT((void)bloc_copy_to(a, buf, SIZE_MAX_V, 0u)));
-    ROW("copy NULL", 0, TS_CHK_ASSERT((void)bloc_copy(NULL, a)));
-    ROW("append bounds", 0, TS_CHK_ASSERT((void)bloc_append(b, a, SIZE_MAX_V)));
-    ROW("append_data bounds", 0, TS_CHK_ASSERT((void)bloc_append_data(b, buf, SIZE_MAX_V)));
-    ROW("prepend bounds", 0, TS_CHK_ASSERT((void)bloc_prepend(b, a, SIZE_MAX_V)));
-    ROW("prepend_data bounds", 0, TS_CHK_ASSERT((void)bloc_prepend_data(b, buf, SIZE_MAX_V)));
-    ROW("copy_from NULL", 0, TS_CHK_ASSERT((void)bloc_copy_from(NULL, buf, 0u)));
-    ROW("copy_to NULL", 0, TS_CHK_ASSERT((void)bloc_copy_to(NULL, buf, 0u, 0u)));
-    ROW("append NULL", 0, TS_CHK_ASSERT((void)bloc_append(NULL, a, 0u)));
-    ROW("prepend NULL", 0, TS_CHK_ASSERT((void)bloc_prepend(b, NULL, 0u)));
+    ROW("copy_from bounds", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_copy_from(a, buf, SIZE_MAX_V))));
+    ROW("copy_to bounds", 0,
+        TS_CHK_ASSERT(
+            TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_copy_to(a, buf, SIZE_MAX_V, 0u))));
+    ROW("copy NULL", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_copy(NULL, a))));
+    ROW("append bounds", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_append(b, a, SIZE_MAX_V))));
+    ROW("append_data bounds", 0,
+        TS_CHK_ASSERT(
+            TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_append_data(b, buf, SIZE_MAX_V))));
+    ROW("prepend bounds", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_prepend(b, a, SIZE_MAX_V))));
+    ROW("prepend_data bounds", 0,
+        TS_CHK_ASSERT(
+            TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_prepend_data(b, buf, SIZE_MAX_V))));
+    ROW("copy_from NULL", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_copy_from(NULL, buf, 0u))));
+    ROW("copy_to NULL", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_copy_to(NULL, buf, 0u, 0u))));
+    ROW("append NULL", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_append(NULL, a, 0u))));
+    ROW("prepend NULL", 0,
+        TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_prepend(b, NULL, 0u))));
 #endif
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(a));
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
@@ -322,12 +342,13 @@ void test_TS_02_no_nesting(void)
         bloc_pool_stats_t stats;
 
         TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_pool_get_stats(&pool, &stats));
-        TS_CHK_ASSERT((void)bloc_pool_get_stats(&zeroed, &stats));
+        TS_CHK_ASSERT(
+            TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_pool_get_stats(&zeroed, &stats)));
     }
 #endif
-    TS_CHK_ASSERT((void)bloc_pool_deinit(&zeroed));
+    TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_pool_deinit(&zeroed)));
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(a));
-    TS_CHK_ASSERT((void)bloc_release(a)); /* already free */
+    TS_CHK_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_release(a))); /* already free */
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_pool_deinit(&pool));
 

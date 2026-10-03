@@ -18,6 +18,17 @@
 #define PA ((size_t)BLOC_PAYLOAD_ALIGNMENT)
 #define SA ((size_t)BLOC_STORAGE_ALIGNMENT)
 
+/*
+ * Tag SA > 1. BLOC_STORAGE_ALIGNMENT contains _Alignof and cannot be used in #if. It exceeds 1
+ * whenever a configured alignment does, and also through the pointer members of struct
+ * bloc_handle on every target except AVR, whose pointers have byte alignment.
+ */
+#if !defined(__AVR__) || BLOC_BLOCK_ALIGNMENT > 1 || BLOC_PAYLOAD_ALIGNMENT > 1
+#define TS_SA_GT_1 1
+#else
+#define TS_SA_GT_1 0
+#endif
+
 static ts_snap_t g_snap;
 
 void setUp(void) { ts_test_setup(); }
@@ -176,6 +187,7 @@ void test_POOL_06_element_size_limit(void)
 
 /* --- POOL-07 ------------------------------------------------------------------------------ */
 
+#if TS_SA_GT_1
 void test_POOL_07_misaligned_storage(void)
 {
     bloc_pool_t pool;
@@ -183,7 +195,6 @@ void test_POOL_07_misaligned_storage(void)
     const size_t shifts[] = {1u, SA / 2u};
     size_t i;
 
-    TEST_ASSERT_TRUE(SA > 1u);
     for (i = 0u; i < sizeof(shifts) / sizeof(shifts[0]); i++) {
         uint8_t *st = ts_storage(size + SA, shifts[i]);
         bloc_status_t r = BLOC_OK;
@@ -195,6 +206,8 @@ void test_POOL_07_misaligned_storage(void)
         TS_SNAP_CHECK(&g_snap);
     }
 }
+
+#endif /* TS_SA_GT_1 */
 
 /* --- POOL-08 ------------------------------------------------------------------------------ */
 
@@ -336,6 +349,9 @@ void test_POOL_14_failed_init_leaves_pool_unchanged(void)
     const size_t need = BLOC_POOL_SIZE(3, 16);
     uint8_t *aligned = ts_storage(need, 0u);
     uint8_t *misaligned = ts_storage(need, 1u);
+#if TS_SA_GT_1
+    uint8_t *half_misaligned = ts_storage(need, SA / 2u);
+#endif
     const struct {
         uint8_t *storage;
         size_t size;
@@ -350,6 +366,9 @@ void test_POOL_14_failed_init_leaves_pool_unchanged(void)
         {aligned, need, 3u, BLOC_SIZE_MAX, BLOC_INVALID},
         {aligned, need, 3u, (bloc_size_t)BLOC_ELEMENT_SIZE_MAX, BLOC_BOUNDS},
         {misaligned, need, 3u, 16u, BLOC_ALIGNMENT},
+#if TS_SA_GT_1
+        {half_misaligned, need, 3u, 16u, BLOC_ALIGNMENT},
+#endif
         {aligned, need - 1u, 3u, 16u, BLOC_BOUNDS},
         {aligned, 0u, 3u, 16u, BLOC_BOUNDS},
     };
@@ -588,7 +607,9 @@ int main(void)
     RUN_TEST(test_POOL_04_zero_count);
     RUN_TEST(test_POOL_05_zero_element_size);
     RUN_TEST(test_POOL_06_element_size_limit);
+#if TS_SA_GT_1
     RUN_TEST(test_POOL_07_misaligned_storage);
+#endif
     RUN_TEST(test_POOL_08_storage_size);
     RUN_TEST(test_POOL_09_huge_storage_size);
     RUN_TEST(test_POOL_10_surplus_storage_untouched);

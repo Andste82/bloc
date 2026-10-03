@@ -6,3 +6,17 @@ if(COMMAND bloc_instrument)
   # Top-level build: coverage, sanitizer and LTO flags must match the library's.
   bloc_instrument(bloc_example_basic)
 endif()
+
+if(BLOC_IS_TOP_LEVEL)
+  # The example is also a smoke test, and the sample configuration header must keep compiling.
+  # The header is compiled in its own object, without the library's configuration.
+  add_test(NAME bloc_example_basic COMMAND bloc_example_basic)
+  add_library(bloc_example_opts OBJECT opts_check.c)
+  target_include_directories(bloc_example_opts PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../include" "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_compile_definitions(bloc_example_opts PRIVATE "BLOC_CONFIG_HEADER=\"bloc_opts_example.h\"")
+  set_target_properties(bloc_example_opts PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON
+                        C_EXTENSIONS OFF)
+  target_compile_options(bloc_example_opts PRIVATE
+    "$<$<C_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Werror>")
+endif()

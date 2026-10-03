@@ -75,9 +75,13 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.size }}
         shell: bash # pipefail, so that a failing check_size.sh is not hidden by tee
         run: scripts/check_size.sh --family "${SEL#family:}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: footprint artifact name
+        if: ${{ !cancelled() && inputs.size }}
+        id: family
+        run: echo "name=${SEL#family:}" >> "$GITHUB_OUTPUT"
       - name: upload footprint report
         if: ${{ !cancelled() && inputs.size }}
         uses: actions/upload-artifact@v7
         with:
-          name: size-${{ inputs.name }}
+          name: size-${{ steps.family.outputs.name }}
           path: build/size/

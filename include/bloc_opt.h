@@ -94,14 +94,28 @@
 #error "BLOC_THREAD_SAFE requires BLOC_DECL_PROTECT, BLOC_PROTECT and BLOC_UNPROTECT"
 #endif
 
+/* C11 keywords with their C++11 spellings, so that the header also compiles as C++. */
+#ifdef __cplusplus
+#define BLOC_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
+#define BLOC_ALIGNAS(a) alignas(a)
+#define BLOC_ALIGNOF(t) alignof(t)
+#else
+#define BLOC_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
+#define BLOC_ALIGNAS(a) _Alignas(a)
+#define BLOC_ALIGNOF(t) _Alignof(t)
+#endif
+
+/** True if x is a power of two (x != 0), usable in constant expressions. */
 #define BLOC_IS_POW2(x) ((x) != 0 && (((x) & ((x) - 1)) == 0))
 
-_Static_assert(BLOC_IS_POW2(BLOC_BLOCK_ALIGNMENT), "BLOC_BLOCK_ALIGNMENT must be a power of two");
-_Static_assert(BLOC_IS_POW2(BLOC_PAYLOAD_ALIGNMENT),
-               "BLOC_PAYLOAD_ALIGNMENT must be a power of two");
-_Static_assert((BLOC_SIZE_T)-1 > 0, "BLOC_SIZE_T must be unsigned");
-_Static_assert((BLOC_COUNT_T)-1 > 0, "BLOC_COUNT_T must be unsigned");
-_Static_assert((BLOC_REFCOUNT_T)-1 > 0, "BLOC_REFCOUNT_T must be unsigned");
-_Static_assert(sizeof(BLOC_SIZE_T) <= sizeof(size_t), "BLOC_SIZE_T must not be wider than size_t");
+BLOC_STATIC_ASSERT(BLOC_IS_POW2(BLOC_BLOCK_ALIGNMENT),
+                   "BLOC_BLOCK_ALIGNMENT must be a power of two");
+BLOC_STATIC_ASSERT(BLOC_IS_POW2(BLOC_PAYLOAD_ALIGNMENT),
+                   "BLOC_PAYLOAD_ALIGNMENT must be a power of two");
+BLOC_STATIC_ASSERT((BLOC_SIZE_T)-1 > 0, "BLOC_SIZE_T must be unsigned");
+BLOC_STATIC_ASSERT((BLOC_COUNT_T)-1 > 0, "BLOC_COUNT_T must be unsigned");
+BLOC_STATIC_ASSERT((BLOC_REFCOUNT_T)-1 > 0, "BLOC_REFCOUNT_T must be unsigned");
+BLOC_STATIC_ASSERT(sizeof(BLOC_SIZE_T) <= sizeof(size_t),
+                   "BLOC_SIZE_T must not be wider than size_t");
 
 #endif /* BLOC_OPT_H */

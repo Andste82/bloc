@@ -74,7 +74,7 @@ check_object() {
         allowed="$allowed ts_assert_fail ts_lock_enter ts_lock_exit "
     fi
     if [ "$debug" -eq 1 ]; then
-        allowed="$allowed __aeabi_uidiv __aeabi_uidivmod __udivsi3 __umodsi3 __udivmodhi4 __udivmodsi4 __udivdi3 __umoddi3 __udivmoddi4 "
+        allowed="$allowed __aeabi_uidiv __aeabi_uidivmod __udivsi3 __umodsi3 __udivmodhi4 __udivmodsi4 "
     fi
     if ! "$cc" "${flags[@]}" -c "$root/src/bloc.c" -o "$dir/bloc.o" >"$dir/compile.log" 2>&1; then
         cat "$dir/compile.log" >&2

@@ -100,13 +100,6 @@ gate_row() { # target cc cfg text rodata data bss
     local target="$1" cc="$2" cfg="$3" text="$4" rodata="$5" data="$6" bss="$7"
     local budget version base_version base_text
     version="$(compiler_version "$cc")"
-    if [ "$target" = host ]; then
-        # The host row is informational: FP-03 only, no budget and no baseline entry.
-        if [ "$data" -ne 0 ] || [ "$bss" -ne 0 ]; then
-            fail "FP-03 host $cfg: .data=$data .bss=$bss (both must be 0)"
-        fi
-        return 0
-    fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$target" "$cc" "$cfg" "$version" "$text" \
         "$rodata" "$data" "$bss" >>"$rows"
     if [ "$data" -ne 0 ] || [ "$bss" -ne 0 ]; then
@@ -155,7 +148,9 @@ dead_strip_check() { # target full-api-text
         bloc_prepend bloc_prepend_data"
     mkdir -p "$dir"
     elf="$dir/min_app.elf"
-    if ! "$BLOC_CC" $BLOC_TARGET_FLAGS -std=c11 -Os -ffunction-sections -fdata-sections \
+    local target_flags
+    read -r -a target_flags <<<"$BLOC_TARGET_FLAGS"
+    if ! "$BLOC_CC" "${target_flags[@]}" -std=c11 -Os -ffunction-sections -fdata-sections \
         -I"$root/include" "$root/src/bloc.c" "$root/test/size/min_app.c" -o "$elf" \
         -Wl,--gc-sections --specs=nosys.specs >"$dir/link.log" 2>&1; then
         cat "$dir/link.log" >&2
@@ -229,7 +224,7 @@ measure() { # target label config
     gate_row "$target" "$BLOC_CC" "$cfg" "$text" "$rodata" "$data" "$bss"
     LAST_TEXT="$text"
     case "$target" in
-    cm*)
+    cm* | ca* | cr*)
         {
             echo
             echo "Largest functions: $target, $cfg"

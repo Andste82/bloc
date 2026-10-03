@@ -86,8 +86,8 @@ the interpretation that was chosen and the tests it affects.
   1. Smoke `main.c`, check 2 compares the block distance with `BLOC_HEADER_SIZE +
      BLOC_ALIGN_UP(8, PA)` instead of the literal `HEADER_SIZE + 8`: with `PA = 16` in
      `smoke_opts.h` the literal contradicts the plan's own configuration.
-  2. ALLOC-08 does not call `bloc_set_len`, which does not exist before phase 3; the part of the
-     test that needs it is added with that function.
+  2. ALLOC-08 did not call `bloc_set_len` while that function did not exist. Resolved: the test
+     now sets the length to the element size and checks it.
   3. `bloc_i_overlaps` (plan 4.4) is not present yet. It would be dead code and break the 100 %
      function coverage gate until the phase that uses it (phase 4).
   4. `bloc_i_addr_valid` uses `/` and `%` in debug builds where the plan names `%` only. R-03 allows
@@ -111,9 +111,9 @@ the interpretation that was chosen and the tests it affects.
      The functions now compute both pointers, update the destination fields and then call `memcpy`
      as the last action. This is not observable: all checks have passed by then and `memcpy` cannot
      fail. For `bloc_prepend(b, b, n)` the source pointer is still computed before `offset` changes.
-  4. FP-04: the host x86-64 row of the report is informational (FP-03 only, no baseline entry),
-     because plan 9.5 gives the host row "for information" and the host compiler varies. Rows of
-     all bare-metal targets are in `scripts/size_baseline.txt`.
+  4. FP-04: the host x86-64 rows are gated like every other row (FP-03 and the baseline), but the
+     baseline is only compared when the compiler version matches the recorded one, which differs
+     between machines. Rows of all targets are in `scripts/size_baseline.txt`.
   5. Size-reduction pass (plan 4.6): per-function sizes on ARMv6-M and ARMv7-M were compared (the
      largest of the seven new functions is `bloc_append` with 64 bytes on cortex-m0plus). Sharing an
      internal routine between the BLOC-source and the external-source variants would put the bounds

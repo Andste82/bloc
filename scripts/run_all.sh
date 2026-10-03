@@ -45,6 +45,11 @@ tier_gate() {
     else
         skip format "clang-format is not installed"
     fi
+    if have shellcheck; then
+        step "shellcheck" bash -c 'shellcheck -x scripts/*.sh scripts/ci/*.sh'
+    else
+        skip shellcheck "shellcheck is not installed"
+    fi
     step "no-heap grep (NH-03)" scripts/check_no_heap.sh --grep-only
     step "build host default Debug, no test" scripts/ci/build_one.sh --no-test host default Debug
 }

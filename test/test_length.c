@@ -263,10 +263,14 @@ void test_LEN_09_no_locking(void)
     TS_EXPECT_LOCKS(0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_remove_header(b, 1u)));
     TS_EXPECT_LOCKS(0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_add_header(b, 1u)));
 #if BLOC_CHECKS
-    TS_CHK_ASSERT(TS_EXPECT_LOCKS(0, (void)bloc_set_len(b, BLOC_SIZE_MAX)));
-    TS_CHK_ASSERT(TS_EXPECT_LOCKS(0, (void)bloc_remove_header(b, BLOC_SIZE_MAX)));
-    TS_CHK_ASSERT(TS_EXPECT_LOCKS(0, (void)bloc_add_header(b, BLOC_SIZE_MAX)));
-    TS_CHK_ASSERT(TS_EXPECT_LOCKS(0, (void)bloc_set_len(NULL, 0u)));
+    TS_CHK_ASSERT(TS_EXPECT_LOCKS(
+        0, TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_set_len(b, BLOC_SIZE_MAX))));
+    TS_CHK_ASSERT(TS_EXPECT_LOCKS(
+        0, TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_remove_header(b, BLOC_SIZE_MAX))));
+    TS_CHK_ASSERT(TS_EXPECT_LOCKS(
+        0, TEST_ASSERT_EQUAL_INT(BLOC_BOUNDS, (int)bloc_add_header(b, BLOC_SIZE_MAX))));
+    TS_CHK_ASSERT(
+        TS_EXPECT_LOCKS(0, TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)bloc_set_len(NULL, 0u))));
 #endif
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
 }
