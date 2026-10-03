@@ -130,16 +130,6 @@ bloc_target() {
             BLOC_UNAVAILABLE="gcc -m32 cannot link here (gcc-multilib is not installed)"
         fi
         ;;
-    host-appleclang)
-        # Non-goal (plan section 3.6): defined for completeness, never runs on Linux.
-        BLOC_KIND=host
-        BLOC_CC=clang
-        BLOC_CCID=clang
-        BLOC_REQUIRED_TOOLS="clang cmake ninja"
-        if [ "$(uname -s)" != "Darwin" ]; then
-            BLOC_UNAVAILABLE="macOS is a non-goal and this is not a Darwin machine"
-        fi
-        ;;
     aarch64) _bloc_emulated "$1" aarch64-linux-gnu qemu-aarch64 0 64 ;;
     armhf) _bloc_emulated "$1" arm-linux-gnueabihf qemu-arm 0 32 ;;
     riscv64) _bloc_emulated "$1" riscv64-linux-gnu qemu-riscv64 0 64 ;;
