@@ -1,0 +1,96 @@
+name: target
+description: Install a toolchain, then build and test one target in several configurations.
+
+# Configurations are steps, not matrix cells: one install serves all of them, and a failing
+# configuration does not hide the others (plan section 10.1).
+inputs:
+  selector:      { description: 'Target or family:<name> from scripts/ci/target_table.sh', required: true }
+  packages:      { description: 'apt packages for scripts/ci/apt_install.sh', required: true }
+  cc:            { description: 'Compiler override for host targets (gcc, clang)', default: '' }
+  configs:       { description: 'Configurations to run at Debug', default: 'default debug nochecks wide noalign bigalign pthread' }
+  optconfigs:    { description: 'Configurations for the optimized step; empty = skip', default: '' }
+  optbuildtypes: { description: 'Build types for the optimized step', default: 'Release MinSizeRel' }
+  symbols:       { description: 'Run the symbol check (EM-03)', default: 'false' }
+  size:          { description: 'Run the footprint check (FP-01..05)', default: 'false' }
+
+runs:
+  using: composite
+  steps:
+    - name: install
+      id: install
+      shell: bash
+      run: scripts/ci/apt_install.sh ${{ inputs.packages }}
+    - name: versions
+      shell: bash
+      env: { SEL: '${{ inputs.selector }}', CC: '${{ inputs.cc }}' }
+      run: scripts/ci/build_one.sh --versions "$SEL"
+
+    - name: default
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' default ') }}
+      shell: bash
+      env: { SEL: '${{ inputs.selector }}', CC: '${{ inputs.cc }}' }
+      run: scripts/ci/build_one.sh "$SEL" default Debug
+    - name: debug
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' debug ') }}
+      shell: bash
+      env: { SEL: '${{ inputs.selector }}', CC: '${{ inputs.cc }}' }
+      run: scripts/ci/build_one.sh "$SEL" debug Debug
+    - name: nochecks
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' nochecks ') }}
+      shell: bash
+      env: { SEL: '${{ inputs.selector }}', CC: '${{ inputs.cc }}' }
+      run: scripts/ci/build_one.sh "$SEL" nochecks Debug
+    - name: wide
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' wide ') }}
+      shell: bash
+      env: { SEL: '${{ inputs.selector }}', CC: '${{ inputs.cc }}' }
+      run: scripts/ci/build_one.sh "$SEL" wide Debug
+    - name: noalign
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' noalign ') }}
+      shell: bash
+      env: { SEL: '${{ inputs.selector }}', CC: '${{ inputs.cc }}' }
+      run: scripts/ci/build_one.sh "$SEL" noalign Debug
+    - name: bigalign
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' bigalign ') }}
+      shell: bash
+      env: { SEL: '${{ inputs.selector }}', CC: '${{ inputs.cc }}' }
+      run: scripts/ci/build_one.sh "$SEL" bigalign Debug
+    - name: pthread
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' pthread ') }}
+      shell: bash
+      env: { SEL: '${{ inputs.selector }}', CC: '${{ inputs.cc }}' }
+      run: scripts/ci/build_one.sh "$SEL" pthread Debug
+
+    - name: optimized
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.optconfigs != '' }}
+      shell: bash
+      env: { SEL: '${{ inputs.selector }}', CC: '${{ inputs.cc }}' }
+      run: |
+        rc=0
+        for bt in ${{ inputs.optbuildtypes }}; do
+          for cfg in ${{ inputs.optconfigs }}; do
+            scripts/ci/build_one.sh "$SEL" "$cfg" "$bt" || rc=1
+          done
+        done
+        exit "$rc"
+
+    - name: symbols
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.symbols == 'true' }}
+      shell: bash
+      env: { SEL: '${{ inputs.selector }}' }
+      run: scripts/check_no_heap.sh --target "$SEL"
+
+    - name: footprint
+      id: footprint
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.size == 'true' }}
+      shell: bash
+      env: { SEL: '${{ inputs.selector }}' }
+      run: |
+        echo "family=${SEL#family:}" >> "$GITHUB_OUTPUT"
+        scripts/check_size.sh --family "${SEL#family:}" | tee -a "$GITHUB_STEP_SUMMARY"
+    - name: footprint report
+      if: ${{ !cancelled() && inputs.size == 'true' && steps.footprint.outputs.family != '' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: size-${{ steps.footprint.outputs.family }}
+        path: build/size/

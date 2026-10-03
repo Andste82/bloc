@@ -69,9 +69,9 @@ bloc/
 ├── README.md                      overview, quick start, FetchContent usage, build/test instructions (phase 7)
 ├── LICENSE                        existing, MIT
 ├── .clang-format                  formatting rules (section 3.7)
-├── .github/workflows/
-│   ├── ci.yml                     CI pipeline: gate, fan-out matrix, ci-ok (section 10, Appendix A)
-│   └── _target.yml                reusable per-target workflow, called from ci.yml (section 10.3)
+├── .github/
+│   ├── workflows/ci.yml           CI pipeline: lint, gates, matrix, ci-ok (section 10)
+│   └── actions/target/action.yml  composite action: install, build and test one target (section 10.3)
 ├── cmake/toolchains/              toolchain files for the tier-1E emulated targets (section 3.6)
 ├── docs/
 │   ├── BLOC_SPEC.md               specification (existing)
@@ -1015,63 +1015,61 @@ Rationale: storage is a `uint8_t` array that the library accesses through `struc
 
 ---
 
-## 10. Continuous integration (`.github/workflows/ci.yml`, `_target.yml`)
+## 10. Continuous integration (`.github/workflows/ci.yml`, `.github/actions/target`)
 
-Goal: many compilers, many architectures, many tests, on every pull request, without the pipeline becoming slow, flaky or a wall of copy-pasted YAML. The structure follows the CI of `sofa-buffers/corelib-c-cpp`, which solves the same problem for a portable C library. Appendix A gives skeletons of both workflow files.
+Goal: many compilers, many architectures, many tests, on every pull request, without the pipeline becoming slow, flaky or a wall of copy-pasted YAML. The files in `.github/` are the reference implementation; this section fixes their structure and rules.
 
 ### 10.1 Principles
 
-1. **Gate first.** One cheap job (`gate`) runs format check, NH-03 and one host build (library and all tests compiled, not run) before anything fans out. A broken build is then reported once, in about a minute, instead of by every matrix cell. Every other job has `needs: gate`.
-2. **One reusable workflow, one call site per tier.** `.github/workflows/_target.yml` (`on: workflow_call`) builds and tests one target, parameterized by inputs (container image, apt packages, target selector, compiler, configurations). `ci.yml` calls it from a `matrix:` per tier. Adding a compiler or architecture is one matrix entry, not a new workflow file. (`needs:` cannot cross workflow files, so only this structure makes the gate possible.)
-3. **Configurations are steps, not matrix cells.** The seven test configurations are seven steps in one job, so one toolchain installation serves all of them. Each step has `if: ${{ !cancelled() && steps.install.outcome == 'success' && <config selected> }}`, so one failing configuration does not hide the others, and each reports its own name, duration and log.
-4. **Every cell answers for itself.** `strategy.fail-fast: false` everywhere: the matrices cover genuinely different compilers and hardware.
-5. **Pinned environments.** Linux jobs run in `container: ubuntu:<version>`, so compiler versions are fixed by the image, not by GitHub's `ubuntu-latest`. The reference row and every footprint job use `ubuntu:26.04` (= devcontainer, FP-04 baseline).
-6. **Robust installs.** `scripts/ci/apt_install.sh` always adds `ca-certificates git`, sets `DEBIAN_FRONTEND=noninteractive`, uses `--no-install-recommends` and retries `apt-get update && apt-get install` three times with 15 s between attempts, printing `::warning::` per failed attempt and `::error::` at the end.
-7. **Bounded jobs.** Every job has `timeout-minutes`, about four times its observed duration (set initially to gate 10, host 25, emulated 30, bare-metal 20, others 20; adjust once in phase 6 from real timings, never above 45). A hung job must fail fast instead of holding one of the account's concurrent runner slots for GitHub's default of six hours.
-8. **Cancel superseded runs.** Top-level `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: ${{ github.ref != 'refs/heads/main' }} }`. Runs on `main` are never cancelled.
-9. **Least privilege.** Top-level `permissions: contents: read`.
-10. **One required check.** The final job `ci-ok` has `needs:` on every required job and `if: always()`, and fails if any of them failed or was cancelled. Branch protection requires only `ci-ok`. A job is *informational* while it is not listed in `ci-ok.needs`, and *required* once it is; the phases in section 12 say when each job joins.
-11. **Same scripts locally and in CI.** Workflows contain no build logic beyond calling `scripts/`. `scripts/run_all.sh` runs every tier whose tools are installed and prints `SKIP` for the rest.
+1. **Gates before the matrix.** The pipeline has three stages: `lint` (format, shellcheck, NH-03; no compiler run), then the gates `coverage`, `sanitize` and `no-heap` on the reference image, then the matrix (`host`, `qemu`, `bare`, `lto`, `fetch`), whose jobs have `needs:` on every gate. A broken build, a coverage gap, a sanitizer report or a forbidden symbol is reported once by a gate instead of by every matrix cell, and no runner time is spent on a commit that is already known to be bad.
+2. **Nothing is built twice.** The gates build and run the full test suite of the six coverage-gated configurations with GCC (`coverage`, `-O0`) and with GCC and Clang (`sanitize`), so they are the reference-compiler Debug runs of CC-01. The reference cells `host / gcc-15` and `host / clang-21` only add what the gates do not build: `pthread` at Debug and the optimized builds of CC-03. The online FetchContent test FC-09 is a step of `fetch`, not a separate job.
+3. **One composite action, one call site per tier.** `.github/actions/target/action.yml` installs a toolchain and builds and tests one target in several configurations, parameterized by inputs (apt packages, target selector, compiler, configurations). `host`, `qemu` and `bare` call it from their `matrix:`; adding a compiler or architecture is one matrix entry. A composite action is used instead of a reusable workflow because a called workflow adds a second level to every job name.
+4. **Short job names.** Display names are `<group> / <cell>`, for example `sanitize / clang`, `host / gcc-11`, `host / gcc-15-m32`, `qemu / s390x`, `bare / avr-gcc`, `lto / gcc`. The group is the job id; the cell is one short matrix key (`id`, `arch`, `family`, `cc`). Referencing the matrix in `name:` keeps GitHub from appending all other matrix values.
+5. **Configurations are steps, not matrix cells.** The seven test configurations are seven steps in one job, so one toolchain installation serves all of them. Each step has `if: ${{ !cancelled() && steps.install.outcome == 'success' && <config selected> }}`, so one failing configuration does not hide the others, and each reports its own name, duration and log.
+6. **Every cell answers for itself.** `strategy.fail-fast: false` everywhere: the matrices cover genuinely different compilers and hardware.
+7. **Pinned environments.** Jobs run in `container: ubuntu:<version>`, so compiler versions are fixed by the image, not by GitHub's `ubuntu-latest`. The gates, the reference cells and every footprint job use `ubuntu:26.04` (= devcontainer, FP-04 baseline).
+8. **Robust installs.** `scripts/ci/apt_install.sh` always adds `ca-certificates git`, sets `DEBIAN_FRONTEND=noninteractive`, uses `--no-install-recommends` and retries `apt-get update && apt-get install` three times with 15 s between attempts, printing `::warning::` per failed attempt and `::error::` at the end.
+9. **Bounded jobs.** Every job has `timeout-minutes` of at most 30 (observed durations are about one minute per job). A hung job must fail fast instead of holding a runner for GitHub's default of six hours.
+10. **Cancel superseded runs.** Top-level `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: ${{ github.ref != 'refs/heads/main' }} }`. Runs on `main` are never cancelled.
+11. **Least privilege.** Top-level `permissions: contents: read`.
+12. **One required check.** The final job `ci-ok` has `needs:` on every job and `if: always()`, and fails if any of them failed, was cancelled or was skipped (a skipped matrix job means that a gate failed). Branch protection requires only `ci-ok`.
+13. **Same scripts locally and in CI.** Workflows contain no build logic beyond calling `scripts/`. `scripts/run_all.sh` runs every tier whose tools are installed and prints `SKIP` for the rest.
 
 Triggers: `push` to `main` and tags `v*`, `pull_request` to `main`, `workflow_dispatch`, and a weekly `schedule` (catches drift in the container images and runs FC-09).
 
 ### 10.2 Jobs
 
-| Job | Runs on | Matrix (one cell per entry) | Steps | Tests |
-| --- | --- | --- | --- | --- |
-| `gate` | `ubuntu:26.04` | – | clang-format check over `include/ src/ test/ examples/`; `check_no_heap.sh --grep-only`; `build_one.sh host default Debug --no-test` | NH-03, format |
-| `host` | `_target.yml` | gcc and clang × `ubuntu:26.04`, `ubuntu:24.04`, `ubuntu:22.04` (6 cells), plus gcc `-m32` on `ubuntu:26.04` | 7 configuration steps at Debug; optimized step: `default debug nochecks` × Release, MinSizeRel (`-m32`: `default` × Release); examples build | CC-01..04 |
-| `emulated` | `_target.yml`, `ubuntu:26.04` | `aarch64`, `armhf`, `riscv64`, `powerpc`, `s390x` | 7 configuration steps at Debug (ctest under qemu); optimized step: `default nochecks` × MinSizeRel; symbol check | EM-01..04 |
-| `baremetal` | `_target.yml`, `ubuntu:26.04` | families `arm-gcc`, `clang` (thumbv6m, thumbv7m, rv32imac), `riscv-gcc`, `avr-gcc` | 6 configuration steps (`build_one.sh family:<f> <cfg>`: compile, symbols, static layout check, expected failures such as AVR `wide`); footprint step (`check_size.sh --family <f>`, summary + artifact) | XC-01..05, FP-01..05 |
-| `coverage` | `ubuntu:26.04` | – | one step per coverage-gated configuration: `scripts/coverage.sh <cfg>`; upload HTML reports | Q-01 |
-| `sanitize` | `ubuntu:26.04` | gcc, clang | one step per coverage-gated configuration with ASan+UBSan; clang cell adds the TSan `pthread` step | SAN-01..03 |
-| `lto` | `ubuntu:26.04` | gcc, clang | steps `default`, `debug`, `nochecks` with `BLOC_LTO=ON` | LTO-01..02 |
-| `no-heap` | `ubuntu:26.04` | – | `scripts/check_no_heap.sh` | NH-01..02 |
-| `fetchcontent` | `ubuntu:26.04` | – | one step per offline variant of `fetchcontent_smoke.sh` | FC-01..08, FC-10 |
-| `fetchcontent-online` | `ubuntu:26.04` | – | only for `push` and `schedule`: `fetchcontent_smoke.sh online` with the commit SHA | FC-09 |
-| `ci-ok` | `ubuntu-latest` | – | fails if any needed job failed or was cancelled | – |
+| Stage | Job (display name) | Image | Cells | Steps | Tests |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `lint` | `ubuntu:26.04` | – | clang-format check over `include/ src/ test/ examples/`; shellcheck over `scripts/`; `check_no_heap.sh --grep-only` | NH-03, format |
+| 2 | `coverage` | `ubuntu:26.04` | – | one step per coverage-gated configuration: `scripts/coverage.sh <cfg>`; upload HTML reports | Q-01, CC-01 (GCC) |
+| 2 | `sanitize / <cc>` | `ubuntu:26.04` | `gcc`, `clang` | one step per coverage-gated configuration with ASan+UBSan; `clang` adds the TSan `pthread` step | SAN-01..03, CC-01 |
+| 2 | `no-heap` | `ubuntu:26.04` | – | `scripts/check_no_heap.sh` | NH-01..02 |
+| 3 | `host / <id>` | per cell | `gcc-15`, `clang-21` (`ubuntu:26.04`: `pthread` at Debug, optimized step); `gcc-13`, `clang-18` (`ubuntu:24.04`), `gcc-11`, `clang-14` (`ubuntu:22.04`), `gcc-15-m32` (`ubuntu:26.04`): all seven configurations at Debug and the optimized step | optimized step: `default debug nochecks` × Release, MinSizeRel (`-m32`: `default` × Release) | CC-01..04 |
+| 3 | `qemu / <arch>` | `ubuntu:26.04` | `aarch64`, `armhf`, `riscv64`, `powerpc`, `s390x` | 7 configuration steps at Debug (ctest under qemu); optimized step: `default nochecks` × MinSizeRel; symbol check | EM-01..04 |
+| 3 | `bare / <family>` | `ubuntu:26.04` | `arm-gcc`, `clang` (thumbv6m, thumbv7m, rv32imac), `riscv-gcc`, `avr-gcc` | 6 configuration steps (`build_one.sh family:<f> <cfg>`: compile, symbols, static layout check, expected failures such as AVR `wide`); footprint step (`check_size.sh --family <f>`, summary + artifact) | XC-01..05, FP-01..05 |
+| 3 | `lto / <cc>` | `ubuntu:26.04` | `gcc`, `clang` | steps `default`, `debug`, `nochecks` with `BLOC_LTO=ON` | LTO-01..02 |
+| 3 | `fetch` | `ubuntu:26.04` | – | one step per offline variant of `fetchcontent_smoke.sh`; step `online` (FC-09) only for `push` and `schedule`, with the commit SHA | FC-01..10 |
+| – | `ci-ok` | `ubuntu-latest` | – | fails if any needed job failed, was cancelled or was skipped | – |
 
-That is about 25 jobs per run, running about 250 configuration builds and test runs. GCC coverage, sanitizers, LTO and the footprint baseline run only on the reference image, so their results do not depend on which older compiler happens to be installed.
+That is 25 jobs per run. GCC coverage, sanitizers, LTO and the footprint baseline run only on the reference image, so their results do not depend on which older compiler happens to be installed.
 
-### 10.3 Reusable workflow `_target.yml`
+### 10.3 Composite action `.github/actions/target`
 
-Inputs:
+Inputs (all strings, as composite actions require):
 
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `name` | string | Display name, e.g. `gcc 11 (ubuntu 22.04)` or `s390x (qemu, big-endian)` |
-| `container` | string | Image, e.g. `ubuntu:26.04` |
-| `packages` | string | apt packages for `apt_install.sh` |
-| `selector` | string | Target name or `family:<name>` from `scripts/ci/target_table.sh` |
-| `cc` | string | Optional compiler override for host targets (`gcc`, `clang`); empty = table default |
-| `configs` | string | Space-separated configurations to run at Debug; default: all seven |
-| `optconfigs` | string | Space-separated configurations for the optimized step; empty = skip |
-| `optbuildtypes` | string | Build types for the optimized step; default `Release MinSizeRel` |
-| `symbols` | boolean | Run the symbol check `check_no_heap.sh --target <selector>` (EM-03) |
-| `size` | boolean | Run the footprint step (bare-metal families) |
-| `timeout-minutes` | number | Default 25 |
+| Input | Meaning |
+| --- | --- |
+| `selector` | Target name or `family:<name>` from `scripts/ci/target_table.sh` |
+| `packages` | apt packages for `apt_install.sh` |
+| `cc` | Optional compiler override for host targets (`gcc`, `clang`); empty = table default |
+| `configs` | Space-separated configurations to run at Debug; default: all seven |
+| `optconfigs` | Space-separated configurations for the optimized step; empty = skip |
+| `optbuildtypes` | Build types for the optimized step; default `Release MinSizeRel` |
+| `symbols` | `'true'` runs the symbol check `check_no_heap.sh --target <selector>` (EM-03) |
+| `size` | `'true'` runs the footprint step (bare-metal families) |
 
-Steps: checkout → `apt_install.sh` (`id: install`) → `build_one.sh --versions <selector>` (prints every compiler and tool version) → seven configuration steps → optimized step (loops over `optbuildtypes` × `optconfigs`, continues after a failure and exits non-zero at the end) → symbol step when `symbols` is true → footprint step and artifact upload when `size` is true. A configuration step is selected with `contains(format(' {0} ', inputs.configs), ' <cfg> ')`, so `wide` cannot match inside another name.
+Steps: `apt_install.sh` (`id: install`) → `build_one.sh --versions <selector>` (prints every compiler and tool version) → seven configuration steps → optimized step (loops over `optbuildtypes` × `optconfigs`, continues after a failure and exits non-zero at the end) → symbol step when `symbols` is set → footprint step and artifact upload when `size` is set. A configuration step is selected with `contains(format(' {0} ', inputs.configs), ' <cfg> ')`, so `wide` cannot match inside another name. The calling job does the checkout and sets `container` and `timeout-minutes`.
 
 ### 10.4 Scripts behind the workflows
 
@@ -1120,7 +1118,7 @@ Work:
 - Test support library (section 5) complete, with its own self-tests (`test_support.c`: guard band detection, assertion bookkeeping, lock tracer errors).
 - All seven `test/configs/cfg_*.h`.
 - Stub `include/bloc.h`, `include/bloc_opt.h` and `src/bloc.c`. An empty translation unit is not valid ISO C under `-Wpedantic`, so the stub `bloc.c` contains one internal declaration, e.g. `typedef int bloc_i_translation_unit_not_empty;`.
-- `scripts/*.sh` skeletons, including `cross_check.sh` (loop over the bare-metal targets of `target_table.sh`) and `check_size.sh` (report only). Also `.clang-format` and both workflow files (`ci.yml`, `_target.yml`) with every job of section 10.2 and Appendix A. Initially `ci-ok.needs` lists `gate`, `host`, `emulated` and `fetchcontent`. `coverage`, `no-heap` and `baremetal` join in phase 2; `sanitize` and `lto` in phase 5; `fetchcontent-online` in phase 6. Until then these jobs run but are informational (section 10.1, item 10). The footprint step is informational until phase 4.
+- `scripts/*.sh` skeletons, including `cross_check.sh` (loop over the bare-metal targets of `target_table.sh`) and `check_size.sh` (report only). Also `.clang-format`, `.github/workflows/ci.yml` and `.github/actions/target/action.yml` with every job of section 10.2. Jobs whose tests do not exist yet run but are informational (not in `ci-ok.needs`) until their phase. The footprint step is informational until phase 4.
 
 DoD: `ctest` runs `test_support` green in all configurations with GCC and Clang, on the 32-bit host and on every tier-1E target (EM-04 passes, so each emulated job runs the right architecture); `cross_check.sh` compiles the stub `bloc.c` for every tier-2 target; FC-02, FC-06, FC-07 and FC-08 pass with the macro-only `main.c`; the CI pipeline runs end to end, and `ci-ok` is green.
 
@@ -1174,7 +1172,7 @@ Commit: `phase 5: cross-cutting debug, thread-safety and model-based tests`
 
 ### Phase 6 — Hardening and enforced gates
 
-Work: complete `scripts/sanitize.sh` and `scripts/check_no_heap.sh`, the `-O2`/`-Os` host builds (CC-03), the FP-04 baseline gate, and the EM-03 symbol check. Add `fetchcontent-online` to `ci-ok.needs`; every job of section 10.2 is now required. Adjust every `timeout-minutes` to about four times the observed duration. Enable branch protection on `main` with `ci-ok` as the only required check (the repository owner does this; note it in the commit message). Confirm Q-02: `grep -rnE "LCOV_EXCL|GCOVR_EXCL" src include test` returns nothing.
+Work: complete `scripts/sanitize.sh` and `scripts/check_no_heap.sh`, the `-O2`/`-Os` host builds (CC-03), the FP-04 baseline gate, and the EM-03 symbol check. Every job of section 10.2 is now required (listed in `ci-ok.needs`). Enable branch protection on `main` with `ci-ok` as the only required check (the repository owner does this; note it in the commit message). Confirm Q-02: `grep -rnE "LCOV_EXCL|GCOVR_EXCL" src include test` returns nothing.
 
 Tests: SAN-01..03, NH-01..03, CC-01..04, XC-01..05, FP-01..06, EM-01..04, FC-01..10.
 
@@ -1212,320 +1210,6 @@ Commit: `phase 7: README, examples and API documentation`
 
 ---
 
-## Appendix A — CI workflow skeletons
+## Appendix A — CI workflow files
 
-These skeletons fix the structure of section 10; they are not complete. Lines marked `# ...` stand for the repetitive steps that section 10 describes. They parse as YAML. `ci-ok.needs` shows the final state after phase 6 (section 12 says when each job joins). Before relying on them, the implementer checks the action major versions (`actions/checkout`, `actions/upload-artifact`) against their current releases and the package names against the images, and runs the workflow once with `workflow_dispatch`.
-
-### A.1 `.github/workflows/ci.yml`
-
-```yaml
-name: CI
-
-on:
-  push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
-    branches: [main]
-  schedule:
-    - cron: '17 3 * * 1'        # weekly: image drift, FC-09
-  workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
-permissions:
-  contents: read
-
-jobs:
-  gate:
-    runs-on: ubuntu-latest
-    container: ubuntu:26.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - run: scripts/ci/apt_install.sh build-essential cmake ninja-build clang-format
-      - name: format
-        run: find include src test examples -name '*.[ch]' -print0 | xargs -0 clang-format --dry-run --Werror
-      - name: no-heap grep (NH-03)
-        run: scripts/check_no_heap.sh --grep-only
-      - name: build default (tests compiled, not run)
-        run: scripts/ci/build_one.sh host default Debug --no-test
-
-  host:
-    needs: gate
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: 'gcc 15 (ubuntu 26.04)',   container: 'ubuntu:26.04', cc: gcc,   packages: 'build-essential cmake ninja-build' }
-          - { name: 'clang 21 (ubuntu 26.04)', container: 'ubuntu:26.04', cc: clang, packages: 'clang lld cmake ninja-build' }
-          - { name: 'gcc 13 (ubuntu 24.04)',   container: 'ubuntu:24.04', cc: gcc,   packages: 'build-essential cmake ninja-build' }
-          - { name: 'clang 18 (ubuntu 24.04)', container: 'ubuntu:24.04', cc: clang, packages: 'clang lld cmake ninja-build' }
-          - { name: 'gcc 11 (ubuntu 22.04)',   container: 'ubuntu:22.04', cc: gcc,   packages: 'build-essential cmake ninja-build' }
-          - { name: 'clang 14 (ubuntu 22.04)', container: 'ubuntu:22.04', cc: clang, packages: 'clang lld cmake ninja-build' }
-          - { name: 'gcc 15 -m32 (ubuntu 26.04)', container: 'ubuntu:26.04', selector: host-gcc-m32,
-              packages: 'build-essential gcc-multilib cmake ninja-build', optconfigs: 'default', optbuildtypes: 'Release' }
-    uses: ./.github/workflows/_target.yml
-    with:
-      name: ${{ matrix.name }}
-      container: ${{ matrix.container }}
-      packages: ${{ matrix.packages }}
-      selector: ${{ matrix.selector || 'host' }}
-      cc: ${{ matrix.cc || '' }}
-      optconfigs: ${{ matrix.optconfigs || 'default debug nochecks' }}
-      optbuildtypes: ${{ matrix.optbuildtypes || 'Release MinSizeRel' }}
-
-  emulated:
-    needs: gate
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: 'aarch64 (qemu)',               selector: aarch64, packages: 'gcc-aarch64-linux-gnu', libc: arm64 }
-          - { name: 'armhf (qemu)',                 selector: armhf,   packages: 'gcc-arm-linux-gnueabihf', libc: armhf }
-          - { name: 'riscv64 (qemu)',               selector: riscv64, packages: 'gcc-riscv64-linux-gnu', libc: riscv64 }
-          - { name: 'powerpc (qemu, big-endian)',   selector: powerpc, packages: 'gcc-powerpc-linux-gnu', libc: powerpc }
-          - { name: 's390x (qemu, big-endian)',     selector: s390x,   packages: 'gcc-s390x-linux-gnu', libc: s390x }
-    uses: ./.github/workflows/_target.yml
-    with:
-      name: ${{ matrix.name }}
-      container: 'ubuntu:26.04'
-      packages: ${{ matrix.packages }} qemu-user libc6-dev-${{ matrix.libc }}-cross cmake ninja-build
-      selector: ${{ matrix.selector }}
-      optconfigs: 'default nochecks'
-      optbuildtypes: 'MinSizeRel'
-      symbols: true
-      timeout-minutes: 30
-
-  baremetal:
-    needs: gate
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: 'arm-none-eabi-gcc', family: arm-gcc,
-              packages: 'gcc-arm-none-eabi libnewlib-arm-none-eabi binutils-arm-none-eabi' }
-          - { name: 'clang (thumbv6m, thumbv7m, rv32imac)', family: clang,
-              packages: 'clang lld llvm libnewlib-arm-none-eabi picolibc-riscv64-unknown-elf' }
-          - { name: 'riscv64-unknown-elf-gcc', family: riscv-gcc,
-              packages: 'gcc-riscv64-unknown-elf picolibc-riscv64-unknown-elf' }
-          - { name: 'avr-gcc', family: avr-gcc,
-              packages: 'gcc-avr binutils-avr avr-libc' }
-    uses: ./.github/workflows/_target.yml
-    with:
-      name: ${{ matrix.name }}
-      container: 'ubuntu:26.04'
-      packages: ${{ matrix.packages }}
-      selector: family:${{ matrix.family }}
-      configs: 'default debug nochecks wide noalign bigalign'
-      optconfigs: ''
-      size: true
-      timeout-minutes: 20
-
-  coverage:
-    needs: gate
-    runs-on: ubuntu-latest
-    container: ubuntu:26.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - id: install
-        run: scripts/ci/apt_install.sh build-essential cmake ninja-build gcovr
-      - { name: default,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh default }
-      - { name: debug,    if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh debug }
-      - { name: nochecks, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh nochecks }
-      - { name: wide,     if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh wide }
-      - { name: noalign,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh noalign }
-      - { name: bigalign, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh bigalign }
-      - if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v6
-        with: { name: coverage-html, path: build/coverage/ }
-
-  sanitize:
-    needs: gate
-    runs-on: ubuntu-latest
-    container: ubuntu:26.04
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        cc: [gcc, clang]
-    env:
-      CC: ${{ matrix.cc }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: install
-        run: scripts/ci/apt_install.sh build-essential clang cmake ninja-build
-      # one step per coverage-gated configuration, as in `coverage`:
-      - name: default
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: scripts/sanitize.sh --cc "$CC" default
-      # ... debug, nochecks, wide, noalign, bigalign ...
-      - name: pthread (TSan)
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && matrix.cc == 'clang' }}
-        run: scripts/sanitize.sh --cc clang --tsan pthread
-
-  lto:
-    needs: gate
-    runs-on: ubuntu-latest
-    container: ubuntu:26.04
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        cc: [gcc, clang]
-    env:
-      CC: ${{ matrix.cc }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: install
-        run: scripts/ci/apt_install.sh build-essential clang lld llvm cmake ninja-build
-      - { name: default,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/ci/build_one.sh host default Release --lto }
-      - { name: debug,    if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/ci/build_one.sh host debug Release --lto }
-      - { name: nochecks, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/ci/build_one.sh host nochecks Release --lto }
-
-  no-heap:
-    needs: gate
-    runs-on: ubuntu-latest
-    container: ubuntu:26.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - run: scripts/ci/apt_install.sh build-essential clang cmake ninja-build
-      - run: scripts/check_no_heap.sh
-
-  fetchcontent:
-    needs: gate
-    runs-on: ubuntu-latest
-    container: ubuntu:26.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - id: install
-        run: >-
-          scripts/ci/apt_install.sh build-essential cmake ninja-build make python3-venv
-          gcc-arm-none-eabi libnewlib-arm-none-eabi
-      - { name: basic,         if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh basic }
-      - { name: config-normal, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh config-normal }
-      - { name: config-cache,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh config-cache }
-      - { name: mismatch,      if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh mismatch }
-      - { name: cstd,          if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh cstd }
-      - { name: generators,    if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh generators }
-      - { name: cmake-floor,   if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh cmake-floor }
-      - { name: baremetal,     if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh baremetal }
-      - { name: docs,          if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh docs }   # from phase 7
-
-  fetchcontent-online:
-    needs: gate
-    if: github.event_name == 'push' || github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    container: ubuntu:26.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - run: scripts/ci/apt_install.sh build-essential cmake ninja-build
-      - run: scripts/fetchcontent_smoke.sh online
-        env:
-          BLOC_GIT_TAG: ${{ github.sha }}
-
-  ci-ok:
-    if: always()
-    needs: [gate, host, emulated, baremetal, coverage, sanitize, lto, no-heap, fetchcontent, fetchcontent-online]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: every required job succeeded
-        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
-        run: exit 1
-      - run: echo "all required jobs passed (skipped jobs are allowed, e.g. fetchcontent-online on pull requests)"
-```
-
-### A.2 `.github/workflows/_target.yml`
-
-```yaml
-name: target
-
-on:
-  workflow_call:
-    inputs:
-      name:          { type: string,  required: true }
-      container:     { type: string,  required: true }
-      packages:      { type: string,  required: true }
-      selector:      { type: string,  required: true }
-      cc:            { type: string,  default: '' }
-      configs:       { type: string,  default: 'default debug nochecks wide noalign bigalign pthread' }
-      optconfigs:    { type: string,  default: '' }
-      optbuildtypes: { type: string,  default: 'Release MinSizeRel' }
-      symbols:       { type: boolean, default: false }
-      size:          { type: boolean, default: false }
-      timeout-minutes: { type: number, default: 25 }
-
-jobs:
-  build:
-    name: ${{ inputs.name }}
-    runs-on: ubuntu-latest
-    container: ${{ inputs.container }}
-    timeout-minutes: ${{ inputs.timeout-minutes }}
-    env:
-      SEL: ${{ inputs.selector }}
-      CC: ${{ inputs.cc }}
-      CONFIGS: ' ${{ inputs.configs }} '
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install toolchain
-        id: install
-        run: scripts/ci/apt_install.sh ${{ inputs.packages }}
-      - name: Toolchain versions
-        run: scripts/ci/build_one.sh --versions "$SEL"
-
-      # Configurations are steps, not matrix cells: one install serves all of them,
-      # and a failing configuration does not hide the others.
-      - name: default
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' default ') }}
-        run: scripts/ci/build_one.sh "$SEL" default Debug
-      - name: debug
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' debug ') }}
-        run: scripts/ci/build_one.sh "$SEL" debug Debug
-      - name: nochecks
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' nochecks ') }}
-        run: scripts/ci/build_one.sh "$SEL" nochecks Debug
-      - name: wide
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' wide ') }}
-        run: scripts/ci/build_one.sh "$SEL" wide Debug
-      - name: noalign
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' noalign ') }}
-        run: scripts/ci/build_one.sh "$SEL" noalign Debug
-      - name: bigalign
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' bigalign ') }}
-        run: scripts/ci/build_one.sh "$SEL" bigalign Debug
-      - name: pthread
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' pthread ') }}
-        run: scripts/ci/build_one.sh "$SEL" pthread Debug
-
-      - name: optimized (${{ inputs.optbuildtypes }})
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.optconfigs != '' }}
-        run: |
-          rc=0
-          for bt in ${{ inputs.optbuildtypes }}; do
-            for cfg in ${{ inputs.optconfigs }}; do
-              scripts/ci/build_one.sh "$SEL" "$cfg" "$bt" || rc=1
-            done
-          done
-          exit "$rc"
-
-      - name: symbols (EM-03)
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.symbols }}
-        run: scripts/check_no_heap.sh --target "$SEL"
-
-      - name: footprint
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.size }}
-        run: scripts/check_size.sh --family "${SEL#family:}" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: upload footprint report
-        if: ${{ !cancelled() && inputs.size }}
-        uses: actions/upload-artifact@v6
-        with:
-          name: size-${{ inputs.name }}
-          path: build/size/
-```
+The skeletons that stood here were replaced by the real files: `.github/workflows/ci.yml` and `.github/actions/target/action.yml`. Section 10 states the structure and rules they follow.

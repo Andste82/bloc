@@ -98,10 +98,11 @@ set(_smoke_new_cache ${_smoke_cache_after})
 list(REMOVE_ITEM _smoke_new_cache ${_smoke_cache_before})
 # CMake itself records the version of a sub-project that declares one in the STATIC cache entries
 # CMAKE_PROJECT_VERSION*, so project(bloc VERSION ...) (CM-09) makes them appear; they are not
-# BLOC cache entries (docs/OPEN_QUESTIONS.md, entry OQ-001).
+# BLOC cache entries (docs/OPEN_QUESTIONS.md, entry OQ-001). GIT_EXECUTABLE is created by
+# FetchContent itself when it really downloads with git (FC-09); the offline variants never see it.
 foreach(_smoke_entry IN LISTS _smoke_new_cache)
   smoke_require("BLOC added the cache entry ${_smoke_entry} (CM-04)"
-                _smoke_entry MATCHES "^(BLOC_|bloc_|FETCHCONTENT_|CMAKE_PROJECT_VERSION)")
+                _smoke_entry MATCHES "^(BLOC_|bloc_|FETCHCONTENT_|CMAKE_PROJECT_VERSION|GIT_EXECUTABLE$)")
 endforeach()
 foreach(_smoke_test_option IN ITEMS BLOC_TEST_CONFIG BLOC_COVERAGE BLOC_SANITIZE BLOC_LTO)
   smoke_require("${_smoke_test_option} is defined in a consumer build (CM-04)"
