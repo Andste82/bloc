@@ -1,5 +1,7 @@
 # BLOC — Buffer Lifetime & Offset Control
 
+*Deterministic heap-free fixed-block buffers with reference counting and zero-copy headroom.*
+
 Specification V1, revision 4 · 2026-10-03 · Andreas Steinbart
 
 This document is normative. Words such as *must*, *must not* and *may* are requirements on the implementation. Revision history is in Appendix C.
