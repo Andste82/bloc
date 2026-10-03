@@ -1,8 +1,8 @@
 /*
  * Accessor tests ACC-01..ACC-04 (implementation plan, section 8.5).
  *
- * ACC-01 is checked here after allocation and calloc and after each length operation. The copy,
- * append and prepend operations extend it in phase 4.
+ * ACC-01 is checked here after allocation and calloc and after each length operation, and after
+ * copy_from, append_data and prepend_data.
  */
 #include <stddef.h>
 #include <stdint.h>
@@ -87,6 +87,31 @@ void test_ACC_01_view_after_length_operations(void)
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
 }
 
+void test_ACC_01_view_after_copy_operations(void)
+{
+    bloc_pool_t pool;
+    const size_t e = ts_element_size_aligned();
+    uint8_t src[16];
+    bloc_handle_t b;
+    size_t off;
+
+    ts_pool_setup(&pool, 2u, (bloc_size_t)e);
+    ts_fill(src, sizeof(src), 0x01u);
+    b = bloc_alloc(&pool, (bloc_size_t)(4u * PA));
+    TEST_ASSERT_NOT_NULL(b);
+    off = ts_round_up_pa(4u * PA);
+
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_copy_from(b, src, 6u));
+    check_view(&pool, b, off, 6u);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_append_data(b, src, 4u));
+    check_view(&pool, b, off, 10u);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_prepend_data(b, src, 3u));
+    check_view(&pool, b, off - 3u, 13u);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_copy_from(b, src, 2u));
+    check_view(&pool, b, off - 3u, 2u);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
+}
+
 /* --- ACC-02 ------------------------------------------------------------------------------- */
 
 #if BLOC_CHECKS
@@ -161,6 +186,7 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_ACC_01_view_after_alloc);
     RUN_TEST(test_ACC_01_view_after_length_operations);
+    RUN_TEST(test_ACC_01_view_after_copy_operations);
 #if BLOC_CHECKS
     RUN_TEST(test_ACC_02_null_handle);
 #endif

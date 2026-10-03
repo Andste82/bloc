@@ -59,6 +59,13 @@ size_t ts_expected_stride(size_t element_size);
 /* Block i of an initialized pool, computed from the expected stride and the storage base. */
 struct bloc_handle *ts_block(const bloc_pool_t *p, size_t i);
 
+/* Start of the data area of a block (header size from first principles), headroom included. */
+uint8_t *ts_area(const struct bloc_handle *b);
+
+/* Fails the running Unity test if p[i] != before[i] for any i in [0, size) outside [from, to). */
+void ts_check_same_outside(const uint8_t *p, const uint8_t *before, size_t size, size_t from,
+                           size_t to);
+
 /* Largest of the values 32 and 8 * BLOC_PAYLOAD_ALIGNMENT: an element size that is a multiple of
  * PA. */
 size_t ts_element_size_aligned(void);

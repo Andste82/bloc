@@ -194,9 +194,10 @@ bloc_library_warning_flags() {
     if [ "$1" = gcc ]; then
         flags="$flags -Wcast-align=strict"
     else
-        # Clang lowers a memset call to __aeabi_memclr on ARM EABI targets; R-03 allows only
-        # memcpy and memset. The same flag is set in CMakeLists.txt.
-        flags="$flags -fno-builtin-memset"
+        # Clang lowers a memset call to __aeabi_memclr and a memcpy call to __aeabi_memcpy on ARM
+        # EABI targets; R-03 allows only memcpy and memset. The same flags are set in
+        # CMakeLists.txt.
+        flags="$flags -fno-builtin-memset -fno-builtin-memcpy"
     fi
     echo "$flags"
 }
