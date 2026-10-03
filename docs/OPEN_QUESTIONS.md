@@ -96,3 +96,31 @@ the interpretation that was chosen and the tests it affects.
      which would need a multiplication helper on RV32I).
 - **Tests affected:** FC-01 (smoke check 2), ALLOC-08, DBG-* (handle validity), EM-03, XC-02 (debug
   rows).
+
+## OQ-006 Deviations from the literal text of the plan in phase 4
+
+- **Section:** implementation plan 4.4, 4.5, 4.6, 9.4, 9.5 and the OQ-004 follow-up.
+- **Question and chosen interpretation:**
+  1. Clang for ARM EABI lowers `memcpy` to `__aeabi_memcpy`, as OQ-004 predicted. `-fno-builtin-memcpy`
+     is added next to `-fno-builtin-memset` (library target only, PRIVATE, and in
+     `bloc_library_warning_flags`). No gate was loosened.
+  2. `bloc_i_overlaps` (plan 4.4) is the function-like macro `BLOC_I_OVERLAPS`, for the reason given
+     for `BLOC_I_ADDR_VALID` in OQ-004: an out-of-line helper keeps the handle alive across a call.
+  3. The sketches of plan 4.5 update `len` and `offset` after `memcpy`. With that order GCC for
+     PowerPC emits `_restgpr_30_x` at `-Os` in every copy, append and prepend function (EM-03 failed).
+     The functions now compute both pointers, update the destination fields and then call `memcpy`
+     as the last action. This is not observable: all checks have passed by then and `memcpy` cannot
+     fail. For `bloc_prepend(b, b, n)` the source pointer is still computed before `offset` changes.
+  4. FP-04: the host x86-64 row of the report is informational (FP-03 only, no baseline entry),
+     because plan 9.5 gives the host row "for information" and the host compiler varies. Rows of
+     all bare-metal targets are in `scripts/size_baseline.txt`.
+  5. Size-reduction pass (plan 4.6): per-function sizes on ARMv6-M and ARMv7-M were compared (the
+     largest of the seven new functions is `bloc_append` with 64 bytes on cortex-m0plus). Sharing an
+     internal routine between the BLOC-source and the external-source variants would put the bounds
+     check and the shared-mutation check of the two variants into one function, but the debug
+     overlap check must run between them (spec 13, check order), so the variants cannot share it
+     without a mode argument that FP-05 forbids. No structural change was found that reduces the
+     size, and both budgets are met with a wide margin (cortex-m0plus default 860 of 1536 bytes,
+     nochecks 626 of 1152; cortex-m3 default 812 of 1280, nochecks 618 of 960), so the baseline was
+     created from the first measured values.
+- **Tests affected:** XC-02, XC-03 (Clang rows), EM-03 (powerpc), FP-02, FP-04, DBG-08.

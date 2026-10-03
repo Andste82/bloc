@@ -1,7 +1,7 @@
 /*
  * Thread-safety tests (tag TS, implementation plan, section 8.11). Only the TS-01 rows for the
- * functions that exist are here; TS-02..TS-04 follow in phase 5. The suite runs only where the
- * lock tracer is active (BLOC_THREAD_SAFE with the ts_lock macros).
+ * functions that exist are here (the complete API since phase 4); TS-02..TS-04 follow in phase 5.
+ * The suite runs only where the lock tracer is active (BLOC_THREAD_SAFE with the ts_lock macros).
  *
  * TS-01: protected functions enter the lock exactly once per call on every path after their
  * parameter checks, unprotected functions never. The lock balance and the absence of nesting are
@@ -21,6 +21,10 @@ void setUp(void) { ts_test_setup(); }
 void tearDown(void) { ts_test_teardown(); }
 
 #if TS_HAVE_TRACER
+
+/* See test_copy.c: a volatile value keeps link-time optimization from folding the bounds checks. */
+static volatile bloc_size_t g_size_max = BLOC_SIZE_MAX;
+#define SIZE_MAX_V ((bloc_size_t)g_size_max)
 
 /* One protected function, one path, and how often it must enter the lock. */
 static void check_row(const char *name, unsigned expected, unsigned actual)
@@ -115,9 +119,9 @@ void test_TS_01_alloc_functions(void)
     TEST_ASSERT_NULL(c);
     ROW("calloc empty", 1, c = bloc_calloc(&pool, 0u));
     TEST_ASSERT_NULL(c);
-    ROW("alloc oversize headroom", 0, c = bloc_alloc(&pool, BLOC_SIZE_MAX));
+    ROW("alloc oversize headroom", 0, c = bloc_alloc(&pool, SIZE_MAX_V));
     TEST_ASSERT_NULL(c);
-    ROW("calloc oversize headroom", 0, c = bloc_calloc(&pool, BLOC_SIZE_MAX));
+    ROW("calloc oversize headroom", 0, c = bloc_calloc(&pool, SIZE_MAX_V));
     TEST_ASSERT_NULL(c);
 #if BLOC_CHECKS
     ROW("alloc NULL pool", 0, TS_CHK_ASSERT(c = bloc_alloc(NULL, 0u)));
@@ -215,13 +219,51 @@ void test_TS_01_length_operations(void)
     ROW("remove_header", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_remove_header(b, 1u)));
     ROW("add_header", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_add_header(b, 1u)));
 #if BLOC_CHECKS
-    ROW("set_len bounds", 0, TS_CHK_ASSERT((void)bloc_set_len(b, BLOC_SIZE_MAX)));
-    ROW("remove_header bounds", 0, TS_CHK_ASSERT((void)bloc_remove_header(b, BLOC_SIZE_MAX)));
-    ROW("add_header bounds", 0, TS_CHK_ASSERT((void)bloc_add_header(b, BLOC_SIZE_MAX)));
+    ROW("set_len bounds", 0, TS_CHK_ASSERT((void)bloc_set_len(b, SIZE_MAX_V)));
+    ROW("remove_header bounds", 0, TS_CHK_ASSERT((void)bloc_remove_header(b, SIZE_MAX_V)));
+    ROW("add_header bounds", 0, TS_CHK_ASSERT((void)bloc_add_header(b, SIZE_MAX_V)));
     ROW("set_len NULL", 0, TS_CHK_ASSERT((void)bloc_set_len(NULL, 0u)));
     ROW("remove_header NULL", 0, TS_CHK_ASSERT((void)bloc_remove_header(NULL, 0u)));
     ROW("add_header NULL", 0, TS_CHK_ASSERT((void)bloc_add_header(NULL, 0u)));
 #endif
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
+}
+
+void test_TS_01_copy_append_prepend(void)
+{
+    bloc_pool_t pool;
+    bloc_handle_t a;
+    bloc_handle_t b;
+    uint8_t buf[8] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u};
+
+    ts_pool_setup(&pool, 2u, (bloc_size_t)ts_element_size_aligned());
+    a = bloc_alloc(&pool, 4u * BLOC_PAYLOAD_ALIGNMENT);
+    b = bloc_alloc(&pool, 4u * BLOC_PAYLOAD_ALIGNMENT);
+    TEST_ASSERT_NOT_NULL(a);
+    TEST_ASSERT_NOT_NULL(b);
+
+    ROW("copy_from", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_copy_from(a, buf, 8u)));
+    ROW("copy_to", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_copy_to(a, buf, 8u, 0u)));
+    ROW("copy", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_copy(b, a)));
+    ROW("copy self", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_copy(b, b)));
+    ROW("append", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_append(b, a, 2u)));
+    ROW("append_data", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_append_data(b, buf, 2u)));
+    ROW("prepend", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_prepend(b, a, 2u)));
+    ROW("prepend_data", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_prepend_data(b, buf, 2u)));
+#if BLOC_CHECKS
+    ROW("copy_from bounds", 0, TS_CHK_ASSERT((void)bloc_copy_from(a, buf, SIZE_MAX_V)));
+    ROW("copy_to bounds", 0, TS_CHK_ASSERT((void)bloc_copy_to(a, buf, SIZE_MAX_V, 0u)));
+    ROW("copy NULL", 0, TS_CHK_ASSERT((void)bloc_copy(NULL, a)));
+    ROW("append bounds", 0, TS_CHK_ASSERT((void)bloc_append(b, a, SIZE_MAX_V)));
+    ROW("append_data bounds", 0, TS_CHK_ASSERT((void)bloc_append_data(b, buf, SIZE_MAX_V)));
+    ROW("prepend bounds", 0, TS_CHK_ASSERT((void)bloc_prepend(b, a, SIZE_MAX_V)));
+    ROW("prepend_data bounds", 0, TS_CHK_ASSERT((void)bloc_prepend_data(b, buf, SIZE_MAX_V)));
+    ROW("copy_from NULL", 0, TS_CHK_ASSERT((void)bloc_copy_from(NULL, buf, 0u)));
+    ROW("copy_to NULL", 0, TS_CHK_ASSERT((void)bloc_copy_to(NULL, buf, 0u, 0u)));
+    ROW("append NULL", 0, TS_CHK_ASSERT((void)bloc_append(NULL, a, 0u)));
+    ROW("prepend NULL", 0, TS_CHK_ASSERT((void)bloc_prepend(b, NULL, 0u)));
+#endif
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(a));
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
 }
 
@@ -239,6 +281,7 @@ int main(void)
 #endif
     RUN_TEST(test_TS_01_accessors);
     RUN_TEST(test_TS_01_length_operations);
+    RUN_TEST(test_TS_01_copy_append_prepend);
     return UNITY_END();
 }
 

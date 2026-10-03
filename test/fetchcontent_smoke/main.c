@@ -28,6 +28,9 @@ int main(void)
     bloc_handle_t b;
     size_t stride;
     size_t data_offset;
+    uint8_t out[8];
+    static const uint8_t payload[4] = {0x11u, 0x22u, 0x33u, 0x44u};
+    static const uint8_t header[4] = {0xA1u, 0xA2u, 0xA3u, 0xA4u};
 #if BLOC_STATS && !defined(SMOKE_MISMATCH)
     bloc_pool_stats_t stats;
 #endif
@@ -61,6 +64,38 @@ int main(void)
     }
     if (bloc_len(a) != 0u || bloc_tailroom(a) + bloc_headroom(a) != SMOKE_ELEMENT) {
         return 24;
+    }
+
+    /* 3. Append a payload, add a header in the headroom, read both back. */
+    if (bloc_append_data(a, payload, sizeof(payload)) != BLOC_OK) {
+        return 30;
+    }
+    if (bloc_add_header(a, sizeof(header)) != BLOC_OK) {
+        return 31;
+    }
+    {
+        uint8_t *front = (uint8_t *)bloc_data(a);
+        size_t i;
+
+        for (i = 0u; i < sizeof(header); i++) {
+            front[i] = header[i];
+        }
+    }
+    if (bloc_len(a) != sizeof(header) + sizeof(payload)) {
+        return 32;
+    }
+    if (bloc_copy_to(a, out, sizeof(header), 0u) != BLOC_OK) {
+        return 33;
+    }
+    if (out[0] != header[0] || out[1] != header[1] || out[2] != header[2] || out[3] != header[3]) {
+        return 34;
+    }
+    if (bloc_copy_to(a, out, sizeof(payload), sizeof(header)) != BLOC_OK) {
+        return 35;
+    }
+    if (out[0] != payload[0] || out[1] != payload[1] || out[2] != payload[2] ||
+        out[3] != payload[3]) {
+        return 36;
     }
 
     /* 4. Statistics. The deliberately mismatched build (FC-04) has no such function in the

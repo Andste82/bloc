@@ -79,6 +79,23 @@ struct bloc_handle *ts_block(const bloc_pool_t *p, size_t i)
                                           i * ts_expected_stride((size_t)p->element_size));
 }
 
+uint8_t *ts_area(const struct bloc_handle *b)
+{
+    return (uint8_t *)(uintptr_t)b + ts_expected_header();
+}
+
+void ts_check_same_outside(const uint8_t *p, const uint8_t *before, size_t size, size_t from,
+                           size_t to)
+{
+    size_t i;
+
+    for (i = 0u; i < size; i++) {
+        if ((i < from || i >= to) && p[i] != before[i]) {
+            TEST_FAIL_MESSAGE("byte outside the expected range changed");
+        }
+    }
+}
+
 size_t ts_round_up_pa(size_t x) { return ts_round_up(x, (size_t)BLOC_PAYLOAD_ALIGNMENT); }
 
 size_t ts_element_size_aligned(void)

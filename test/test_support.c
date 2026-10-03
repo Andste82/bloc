@@ -416,6 +416,21 @@ void test_TS_check_fill_fails_on_mismatch(void)
     TS_EXPECT_FAIL(ts_check_fill(g_fill_buf, sizeof(g_fill_buf), 1u));
 }
 
+static uint8_t g_same_a[8];
+static uint8_t g_same_b[8];
+
+void test_TS_check_same_outside(void)
+{
+    ts_fill(g_same_a, sizeof(g_same_a), 7u);
+    memcpy(g_same_b, g_same_a, sizeof(g_same_b));
+    g_same_b[3] = 0xEEu;
+    g_same_b[4] = 0xEFu;
+    ts_check_same_outside(g_same_b, g_same_a, sizeof(g_same_a), 3u, 5u);
+    TS_EXPECT_FAIL(ts_check_same_outside(g_same_b, g_same_a, sizeof(g_same_a), 4u, 5u));
+    TS_EXPECT_FAIL(ts_check_same_outside(g_same_b, g_same_a, sizeof(g_same_a), 3u, 4u));
+    TS_EXPECT_FAIL(ts_check_same_outside(g_same_b, g_same_a, sizeof(g_same_a), 0u, 0u));
+}
+
 void test_TS_xorshift32_is_deterministic(void)
 {
     uint32_t state = 1u;
@@ -482,6 +497,7 @@ int main(void)
 #endif
     RUN_TEST(test_TS_fill_and_check);
     RUN_TEST(test_TS_check_fill_fails_on_mismatch);
+    RUN_TEST(test_TS_check_same_outside);
     RUN_TEST(test_TS_xorshift32_is_deterministic);
     RUN_TEST(test_TS_expected_layout_helpers);
     return UNITY_END();

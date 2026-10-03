@@ -1,6 +1,6 @@
 /*
- * BLOC implementation: pool lifecycle, allocation, accessors, reference counting and the
- * zero-copy length operations.
+ * BLOC implementation: pool lifecycle, allocation, accessors, reference counting, the zero-copy
+ * length operations and the copy, append and prepend operations.
  *
  * All executable code of the library lives in this translation unit. Compile-time options come
  * from bloc_opt.h. See docs/BLOC_SPEC.md for the behaviour and docs/IMPLEMENTATION_PLAN.md,
@@ -50,6 +50,12 @@ static uint8_t *bloc_i_data_start(const struct bloc_handle *b)
     return (uint8_t *)(uintptr_t)b + BLOC_HEADER_SIZE;
 }
 
+/* Start of the payload of a buffer: data_start + offset. */
+static uint8_t *bloc_i_payload(const struct bloc_handle *b)
+{
+    return bloc_i_data_start(b) + b->offset;
+}
+
 #if BLOC_DEBUG
 /*
  * Handle validity steps 2 to 5 (spec section 13) as an expression. The handle must have a
@@ -77,6 +83,15 @@ static uint8_t *bloc_i_data_start(const struct bloc_handle *b)
 
 /* Handle validity step 1 followed by steps 2 to 5. */
 #define BLOC_I_HANDLE_VALID(b) ((b)->refcount != 0u && BLOC_I_ADDR_VALID(b))
+
+/*
+ * True if the external range [ext, ext + n) overlaps the destination write range [dst, dst + n).
+ * Addresses are compared as uintptr_t. An empty range never overlaps. A macro for the same reason
+ * as BLOC_I_ADDR_VALID; the arguments are evaluated several times.
+ */
+#define BLOC_I_OVERLAPS(ext, n, dst)                                                               \
+    ((n) != 0u && (uintptr_t)(ext) < (uintptr_t)(dst) + (n) &&                                     \
+     (uintptr_t)(dst) < (uintptr_t)(ext) + (n))
 
 /* Mutation of a shared buffer is a programming error: assert, then continue (spec section 13). */
 #define BLOC_I_SHARED_MUTATION(b, msg)                                                             \
@@ -437,5 +452,162 @@ bloc_status_t bloc_remove_header(bloc_handle_t b, bloc_size_t n)
     BLOC_I_SHARED_MUTATION(b, "bloc_remove_header: buffer is shared");
     b->offset = (bloc_size_t)(b->offset + n);
     b->len = (bloc_size_t)(b->len - n);
+    return BLOC_OK;
+}
+
+/* --- Copy, append and prepend ------------------------------------------------------------- */
+
+/*
+ * In every function below the fields of the destination are updated before memcpy is called, not
+ * after it. All checks have passed by then, so the order is not observable, and no value has to
+ * live across the call: a handle that does makes GCC for PowerPC emit a libgcc register restore
+ * helper (_restgpr_*) at -Os, which R-03 does not allow (see OQ-004).
+ */
+
+bloc_status_t bloc_copy_from(bloc_handle_t dst, const void *src, bloc_size_t n)
+{
+    uint8_t *p;
+
+    BLOC_I_CHECK(dst != NULL, "bloc_copy_from: dst is NULL", BLOC_INVALID);
+    BLOC_I_CHECK(src != NULL, "bloc_copy_from: src is NULL", BLOC_INVALID);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(dst), "bloc_copy_from: invalid dst handle", BLOC_INVALID);
+#endif
+    BLOC_I_CHECK((size_t)n <= (size_t)dst->link.pool->element_size - dst->offset,
+                 "bloc_copy_from: n exceeds the space after offset", BLOC_BOUNDS);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(!BLOC_I_OVERLAPS(src, (size_t)n, bloc_i_payload(dst)),
+                   "bloc_copy_from: src overlaps the destination", BLOC_INVALID);
+#endif
+    BLOC_I_SHARED_MUTATION(dst, "bloc_copy_from: buffer is shared");
+    p = bloc_i_payload(dst);
+    dst->len = n;
+    (void)memcpy(p, src, n);
+    return BLOC_OK;
+}
+
+bloc_status_t bloc_copy_to(bloc_const_handle_t src, void *dst, bloc_size_t n, bloc_size_t pos)
+{
+    BLOC_I_CHECK(src != NULL, "bloc_copy_to: src is NULL", BLOC_INVALID);
+    BLOC_I_CHECK(dst != NULL, "bloc_copy_to: dst is NULL", BLOC_INVALID);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(src), "bloc_copy_to: invalid src handle", BLOC_INVALID);
+#endif
+    BLOC_I_CHECK(pos <= src->len, "bloc_copy_to: pos exceeds len", BLOC_BOUNDS);
+    BLOC_I_CHECK(n <= src->len - pos, "bloc_copy_to: n exceeds len - pos", BLOC_BOUNDS);
+    (void)memcpy(dst, bloc_i_payload(src) + pos, n);
+    return BLOC_OK;
+}
+
+bloc_status_t bloc_copy(bloc_handle_t dst, bloc_const_handle_t src)
+{
+    uint8_t *p;
+    bloc_size_t n;
+
+    BLOC_I_CHECK(dst != NULL, "bloc_copy: dst is NULL", BLOC_INVALID);
+    BLOC_I_CHECK(src != NULL, "bloc_copy: src is NULL", BLOC_INVALID);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(dst), "bloc_copy: invalid dst handle", BLOC_INVALID);
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(src), "bloc_copy: invalid src handle", BLOC_INVALID);
+#endif
+    if (dst == src) {
+        return BLOC_OK;
+    }
+    BLOC_I_CHECK((size_t)src->len <= (size_t)dst->link.pool->element_size - dst->offset,
+                 "bloc_copy: src len exceeds the space after offset", BLOC_BOUNDS);
+    BLOC_I_SHARED_MUTATION(dst, "bloc_copy: buffer is shared");
+    p = bloc_i_payload(dst);
+    n = src->len;
+    dst->len = (bloc_size_t)n;
+    (void)memcpy(p, bloc_i_payload(src), n);
+    return BLOC_OK;
+}
+
+bloc_status_t bloc_append(bloc_handle_t dst, bloc_const_handle_t src, bloc_size_t n)
+{
+    uint8_t *p;
+    const uint8_t *s;
+
+    BLOC_I_CHECK(dst != NULL, "bloc_append: dst is NULL", BLOC_INVALID);
+    BLOC_I_CHECK(src != NULL, "bloc_append: src is NULL", BLOC_INVALID);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(dst), "bloc_append: invalid dst handle", BLOC_INVALID);
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(src), "bloc_append: invalid src handle", BLOC_INVALID);
+#endif
+    BLOC_I_CHECK(n <= src->len, "bloc_append: n exceeds src len", BLOC_BOUNDS);
+    BLOC_I_CHECK((size_t)n <= (size_t)dst->link.pool->element_size - dst->offset - dst->len,
+                 "bloc_append: n exceeds tailroom", BLOC_BOUNDS);
+    BLOC_I_SHARED_MUTATION(dst, "bloc_append: buffer is shared");
+    p = bloc_i_payload(dst) + dst->len;
+    s = bloc_i_payload(src);
+    dst->len = (bloc_size_t)(dst->len + n);
+    (void)memcpy(p, s, n);
+    return BLOC_OK;
+}
+
+bloc_status_t bloc_append_data(bloc_handle_t dst, const void *src, bloc_size_t n)
+{
+    uint8_t *p;
+
+    BLOC_I_CHECK(dst != NULL, "bloc_append_data: dst is NULL", BLOC_INVALID);
+    BLOC_I_CHECK(src != NULL, "bloc_append_data: src is NULL", BLOC_INVALID);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(dst), "bloc_append_data: invalid dst handle", BLOC_INVALID);
+#endif
+    BLOC_I_CHECK((size_t)n <= (size_t)dst->link.pool->element_size - dst->offset - dst->len,
+                 "bloc_append_data: n exceeds tailroom", BLOC_BOUNDS);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(!BLOC_I_OVERLAPS(src, (size_t)n, bloc_i_payload(dst) + dst->len),
+                   "bloc_append_data: src overlaps the destination", BLOC_INVALID);
+#endif
+    BLOC_I_SHARED_MUTATION(dst, "bloc_append_data: buffer is shared");
+    p = bloc_i_payload(dst) + dst->len;
+    dst->len = (bloc_size_t)(dst->len + n);
+    (void)memcpy(p, src, n);
+    return BLOC_OK;
+}
+
+bloc_status_t bloc_prepend(bloc_handle_t dst, bloc_const_handle_t src, bloc_size_t n)
+{
+    uint8_t *p;
+    const uint8_t *s;
+
+    BLOC_I_CHECK(dst != NULL, "bloc_prepend: dst is NULL", BLOC_INVALID);
+    BLOC_I_CHECK(src != NULL, "bloc_prepend: src is NULL", BLOC_INVALID);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(dst), "bloc_prepend: invalid dst handle", BLOC_INVALID);
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(src), "bloc_prepend: invalid src handle", BLOC_INVALID);
+#endif
+    BLOC_I_CHECK(n <= src->len, "bloc_prepend: n exceeds src len", BLOC_BOUNDS);
+    BLOC_I_CHECK(n <= dst->offset, "bloc_prepend: n exceeds headroom", BLOC_BOUNDS);
+    BLOC_I_SHARED_MUTATION(dst, "bloc_prepend: buffer is shared");
+    /* The source pointer is computed from the offset before it changes (src may be dst). */
+    s = bloc_i_payload(src);
+    p = bloc_i_payload(dst) - n;
+    dst->offset = (bloc_size_t)(dst->offset - n);
+    dst->len = (bloc_size_t)(dst->len + n);
+    (void)memcpy(p, s, n);
+    return BLOC_OK;
+}
+
+bloc_status_t bloc_prepend_data(bloc_handle_t dst, const void *src, bloc_size_t n)
+{
+    uint8_t *p;
+
+    BLOC_I_CHECK(dst != NULL, "bloc_prepend_data: dst is NULL", BLOC_INVALID);
+    BLOC_I_CHECK(src != NULL, "bloc_prepend_data: src is NULL", BLOC_INVALID);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(dst), "bloc_prepend_data: invalid dst handle", BLOC_INVALID);
+#endif
+    BLOC_I_CHECK(n <= dst->offset, "bloc_prepend_data: n exceeds headroom", BLOC_BOUNDS);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(!BLOC_I_OVERLAPS(src, (size_t)n, bloc_i_payload(dst) - n),
+                   "bloc_prepend_data: src overlaps the destination", BLOC_INVALID);
+#endif
+    BLOC_I_SHARED_MUTATION(dst, "bloc_prepend_data: buffer is shared");
+    p = bloc_i_payload(dst) - n;
+    dst->offset = (bloc_size_t)(dst->offset - n);
+    dst->len = (bloc_size_t)(dst->len + n);
+    (void)memcpy(p, src, n);
     return BLOC_OK;
 }
