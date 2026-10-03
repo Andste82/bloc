@@ -10,8 +10,11 @@
 
 #include "bloc.h"
 
-#if BLOC_DEBUG
+#if BLOC_DEBUG && BLOC_ASSERT_MESSAGES
 #define BLOC_I_FAIL(msg) BLOC_PLATFORM_ASSERT(msg)
+#elif BLOC_DEBUG
+/* No message text is compiled (spec section 17): classic AVRs would keep it in RAM. */
+#define BLOC_I_FAIL(msg) BLOC_PLATFORM_ASSERT((const char *)NULL)
 #else
 #define BLOC_I_FAIL(msg) ((void)0)
 #endif

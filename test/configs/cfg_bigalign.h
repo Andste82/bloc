@@ -1,4 +1,5 @@
-/* Test configuration "bigalign": BA > PA, cache-line blocks, 32-bit reference count */
+/* Test configuration "bigalign": BA > PA, cache-line blocks, 32-bit reference count, assertion
+ * messages off */
 #ifndef BLOC_TEST_CFG_BIGALIGN_H
 #define BLOC_TEST_CFG_BIGALIGN_H
 
@@ -12,6 +13,7 @@
 #define BLOC_CHECKS 1
 #define BLOC_DEBUG 1
 #define BLOC_STATS 0
+#define BLOC_ASSERT_MESSAGES 0
 
 #include "ts_assert.h"
 

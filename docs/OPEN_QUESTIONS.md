@@ -102,7 +102,19 @@ the interpretation that was chosen and the tests it affects.
 - **Resolution of (2) (2026-10-03):** confirmed by the owner. Spec section 6 (revision 5) now shows
   the AVR exclusion in the default assertion and explains it: avr-gcc turns `__builtin_trap()` into
   a call to `abort()`, and `BREAK` is a no-op without a debugger. `src/include/bloc_opt.h` already
-  matched. (1), (4) and (5) need only plan updates; (3) awaits the owner's decision.
+  matched.
+- **Resolution of (1), (3), (4), (5) (2026-10-03):** OQ-004 is closed.
+  (1) Plan section 3.3 and CM-02 name Clang's `-fno-builtin-memset -fno-builtin-memcpy`.
+  (3) Measuring showed that the real cost is not the symbol but the RAM: classic AVRs copy the
+  assertion messages (about 2.6 KiB in the `debug` configuration) into RAM at start-up, more than an
+  ATmega328P has. Decided by the owner: spec section 2 (revision 5) states that toolchain startup
+  symbols such as `__do_copy_data` are neither runtime helpers nor C library calls, and the new
+  option `BLOC_ASSERT_MESSAGES` (spec sections 6 and 17, default `1`) passes a null pointer instead
+  of the message when set to `0`, so that no message text is compiled. The `bigalign` test
+  configuration uses `0`; DBG-14 checks both settings, and the XC-02 exception for
+  `__do_copy_data` now applies only when messages are on, so the AVR `bigalign` rows are strict.
+  (4) Plan section 4.4 describes the debug helpers as function-like macros and why.
+  (5) Plan XC-02 and EM-03 already list the debug division helpers.
 
 ## OQ-005 Deviations from the literal text of the plan in phase 2
 

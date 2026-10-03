@@ -58,6 +58,7 @@ These rules are hard requirements and are verified automatically (implementation
 - No variable-length arrays, no recursion, no floating point, no function-local `static` state.
 - With `BLOC_DEBUG = 0`, compiled BLOC code must not call compiler runtime helpers (libgcc, compiler-rt), on any target. Concretely: no integer division or modulo, no 64-bit arithmetic on targets narrower than 64 bits, no software floating point. ARMv6-M, AVR and RV32I have no hardware divider, so a single `/` or `%` would pull in a runtime helper such as `__aeabi_uidivmod`.
 - With `BLOC_DEBUG = 1`, the only runtime helpers allowed are unsigned integer division and modulo, needed by handle-validity step 5 (section 13).
+- Symbols that only ask the linker for the toolchain's startup code for initialized data are not runtime helpers and not C library calls. avr-gcc references `__do_copy_data` from every object that contains constants, because classic AVRs keep constants in RAM and copy them there before `main()`; BLOC never calls it. With BLOC this happens only for assertion messages (`BLOC_DEBUG = 1`, `BLOC_ASSERT_MESSAGES = 1`, and a `BLOC_PLATFORM_ASSERT` that uses its argument).
 
 ## 3. Physical block layout and alignment
 
@@ -197,6 +198,7 @@ All options have defaults in `bloc_opt.h`, guarded by `#ifndef`. A project overr
 | `BLOC_CHECKS` | `1` | Parameter and bounds checks that return status codes |
 | `BLOC_DEBUG` | `0` | Assertions for programming errors (section 13); requires `BLOC_CHECKS = 1` |
 | `BLOC_PLATFORM_ASSERT(msg)` | trap, see below | Called when a debug assertion fails; used only when `BLOC_DEBUG = 1` |
+| `BLOC_ASSERT_MESSAGES` | `1` | `1` = `BLOC_PLATFORM_ASSERT` receives a message string; `0` = it receives a null pointer and no message text is compiled (section 17); used only when `BLOC_DEBUG = 1` |
 | `BLOC_STATS` | `0` | High-water mark and allocation-failure counter |
 
 ### Derived constants (public)
@@ -223,7 +225,7 @@ As in lwIP (`LWIP_PLATFORM_ASSERT`), the configurable hook receives a message an
 
 AVR is excluded from the trap variant because it has no trap instruction: avr-gcc compiles `__builtin_trap()` to a call to `abort()` from the C library, and the AVR `BREAK` instruction is a no-op without a debugger. The infinite loop is plain C and halts on every target.
 
-An application may route it to its own fault handler, logger or breakpoint. If the hook returns, BLOC continues as described in section 13.
+An application may route it to its own fault handler, logger or breakpoint. With `BLOC_ASSERT_MESSAGES = 0` the argument is a null pointer, so a hook must not dereference it unconditionally. If the hook returns, BLOC continues as described in section 13.
 
 ### Compile-time validation
 
@@ -702,7 +704,8 @@ Configurations with `BLOC_DEBUG`, `BLOC_STATS` or `BLOC_THREAD_SAFE` enabled, an
 ### Section rules
 
 - `.data` and `.bss` are `0` bytes in every configuration and on every target (BLOC has no global state, section 2).
-- With `BLOC_DEBUG = 0`, `.rodata` is `0` bytes. With `BLOC_DEBUG = 1`, `.rodata` holds only assertion messages.
+- With `BLOC_DEBUG = 0`, `.rodata` is `0` bytes. With `BLOC_DEBUG = 1`, `.rodata` holds only assertion messages, and it is `0` bytes with `BLOC_ASSERT_MESSAGES = 0` or with a `BLOC_PLATFORM_ASSERT` that discards its argument (such as the default).
+- On classic AVRs (for example ATmega328P) constants are copied into RAM at start-up, so assertion messages cost RAM as well as flash: about 2.6 KiB for the full set, more than the 2 KiB of RAM of an ATmega328P. Debug builds for such parts set `BLOC_ASSERT_MESSAGES` to `0` when their hook uses the argument.
 
 ### Design rules
 
@@ -777,4 +780,4 @@ All 26 findings of the first review are resolved; four were design decisions by 
 | 2 | 2026-10-03 | Review resolved (Appendix B), API revised (section 15) |
 | 3 | 2026-10-03 | No-heap and libc dependency rules (section 2); `BLOC_ASSERT(x)` replaced by lwIP-style `BLOC_PLATFORM_ASSERT(msg)` with a libc-free trapping default; `BLOC_DEBUG` requires `BLOC_CHECKS`; exact static-assert messages; `BLOC_ELEMENT_SIZE_MAX` and `*_MAX` constants; pool unchanged on failed init; bail/continue semantics after a returning assertion; handle-validity steps and check order; asserts never under lock; runtime invariant assert reduced to the O(1) one; header split into `bloc.h` and `bloc_opt.h` |
 | 4 | 2026-10-03 | Code-size requirement with `.text` budgets for ARMv6-M and ARMv7-M (section 17); no compiler runtime helpers without `BLOC_DEBUG` (section 2); `bloc_pool_init` size check without division (section 7) |
-| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002); the headroom check of `bloc_alloc` must not overflow (section 8, OQ-003); the default assertion halts in an infinite loop on AVR, where `__builtin_trap()` would call `abort()` (section 6, OQ-004) |
+| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002); the headroom check of `bloc_alloc` must not overflow (section 8, OQ-003); the default assertion halts in an infinite loop on AVR, where `__builtin_trap()` would call `abort()` (section 6, OQ-004); new option `BLOC_ASSERT_MESSAGES` (section 6, 17) and toolchain startup symbols such as `__do_copy_data` (section 2, OQ-004) |

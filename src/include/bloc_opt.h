@@ -55,6 +55,15 @@
 #define BLOC_DEBUG 0
 #endif
 
+/**
+ * 1 = BLOC_PLATFORM_ASSERT receives a message string; 0 = it receives a null pointer and no message
+ * text is compiled (default 1, BLOC_DEBUG only). Classic AVRs keep constants in RAM, where the full
+ * set of messages costs about 2.6 KiB.
+ */
+#ifndef BLOC_ASSERT_MESSAGES
+#define BLOC_ASSERT_MESSAGES 1
+#endif
+
 /** 1 = high-water mark and allocation-failure counter (default 0). */
 #ifndef BLOC_STATS
 #define BLOC_STATS 0

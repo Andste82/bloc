@@ -736,6 +736,23 @@ void test_DBG_13_valid_runtime_conditions_never_assert(void)
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)r);
 }
 
+/* --- DBG-14 ------------------------------------------------------------------------------- */
+
+/* The assertion handler receives a message only with BLOC_ASSERT_MESSAGES = 1 (spec section 6). */
+void test_DBG_14_assert_messages_option(void)
+{
+    bloc_status_t r = BLOC_OK;
+
+    TS_EXPECT_ASSERT(r = bloc_retain(NULL));
+    TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)r);
+#if BLOC_ASSERT_MESSAGES
+    TEST_ASSERT_NOT_NULL(ts_assert_last_msg);
+    TEST_ASSERT_TRUE(ts_assert_last_msg[0] != '\0');
+#else
+    TEST_ASSERT_NULL(ts_assert_last_msg);
+#endif
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -753,6 +770,7 @@ int main(void)
     RUN_TEST(test_DBG_11_one_assertion_per_chk_failure);
     RUN_TEST(test_DBG_12_assertions_never_fire_under_the_lock);
     RUN_TEST(test_DBG_13_valid_runtime_conditions_never_assert);
+    RUN_TEST(test_DBG_14_assert_messages_option);
     return UNITY_END();
 }
 

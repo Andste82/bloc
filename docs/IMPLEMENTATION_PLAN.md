@@ -193,7 +193,7 @@ Library (`bloc`), both compilers:
 -Wstrict-prototypes -Wmissing-prototypes -Wcast-align -fno-common
 ```
 
-GCC additionally: `-Wcast-align=strict` (replaces `-Wcast-align`). Release builds: `-O2`. Coverage builds: `-O0 -g --coverage`.
+GCC additionally: `-Wcast-align=strict` (replaces `-Wcast-align`). Clang additionally: `-fno-builtin-memset -fno-builtin-memcpy`, because on ARM EABI targets Clang would otherwise replace the calls with `__aeabi_memclr` and `__aeabi_memcpy`, which R-03 does not allow; GCC does not do this replacement. Release builds: `-O2`. Coverage builds: `-O0 -g --coverage`.
 
 Tests: `-std=c11 -Wall -Wextra -Wpedantic -Werror` (no `-Wconversion`). Unity itself is compiled without `-Werror`.
 
@@ -282,7 +282,7 @@ The files `src/CMakeLists.txt` and `CMakeLists.txt` are the reference for the de
 | ID | Rule |
 | --- | --- |
 | CM-01 | The consumer-visible result of `FetchContent_MakeAvailable(bloc)` (with `SOURCE_SUBDIR src`) with default options is exactly one buildable target, `bloc` (STATIC), with the alias `bloc::bloc`. No other targets, no subdirectories, no tests, no Unity download. Consumers link `bloc::bloc`. |
-| CM-02 | Usage requirements of `bloc` are exactly: the `src/include/` directory (`BUILD_INTERFACE`), the compile feature `c_std_11`, and, if configured, the `BLOC_CONFIG_HEADER` definition plus `BLOC_CONFIG_DIRS`. `INTERFACE_LINK_LIBRARIES` and `INTERFACE_COMPILE_OPTIONS` are empty: warning, coverage, sanitizer and LTO flags are PRIVATE or test-only and never reach the consumer. |
+| CM-02 | Usage requirements of `bloc` are exactly: the `src/include/` directory (`BUILD_INTERFACE`), the compile feature `c_std_11`, and, if configured, the `BLOC_CONFIG_HEADER` definition plus `BLOC_CONFIG_DIRS`. `INTERFACE_LINK_LIBRARIES` and `INTERFACE_COMPILE_OPTIONS` are empty: warning, coverage, sanitizer and LTO flags, and Clang's `-fno-builtin-memset -fno-builtin-memcpy`, are PRIVATE or test-only and never reach the consumer. |
 | CM-03 | No global side effects. BLOC's CMake code never calls `add_compile_options`, `add_link_options`, `add_definitions`, `include_directories`, `link_libraries` or `include(CTest)`, never sets `CMAKE_C_FLAGS*`, `CMAKE_C_STANDARD`, `CMAKE_BUILD_TYPE`, `CMAKE_*_OUTPUT_DIRECTORY` or `CMAKE_POSITION_INDEPENDENT_CODE`, and never writes `PARENT_SCOPE` variables. All flags are set per target. |
 | CM-04 | Namespace hygiene. Cache entries created by `src/CMakeLists.txt` start with `BLOC_`; it calls no `project()`, so there are no `bloc_*` or `CMAKE_PROJECT_VERSION*` entries. Test-only options (`BLOC_TEST_CONFIG`, `BLOC_COVERAGE`, `BLOC_SANITIZE`, `BLOC_LTO`) exist only in a top-level build. |
 | CM-05 | Location independence. Inside BLOC's CMake files, paths are built from `CMAKE_CURRENT_SOURCE_DIR` or `CMAKE_CURRENT_BINARY_DIR` (`src/CMakeLists.txt` uses only these), or `bloc_SOURCE_DIR` in the top-level file; `CMAKE_SOURCE_DIR` and `CMAKE_BINARY_DIR` appear only in the top-level detection. |
@@ -301,7 +301,7 @@ The files `src/CMakeLists.txt` and `CMakeLists.txt` are the reference for the de
 Contents, in this order:
 
 1. Include guard.
-2. Default for every option in spec section 6, each wrapped in `#ifndef`. Defaults: `BLOC_BLOCK_ALIGNMENT 4`, `BLOC_PAYLOAD_ALIGNMENT 4`, `BLOC_SIZE_T uint16_t`, `BLOC_COUNT_T uint8_t`, `BLOC_REFCOUNT_T uint8_t`, `BLOC_THREAD_SAFE 0`, `BLOC_CHECKS 1`, `BLOC_DEBUG 0`, `BLOC_STATS 0`.
+2. Default for every option in spec section 6, each wrapped in `#ifndef`. Defaults: `BLOC_BLOCK_ALIGNMENT 4`, `BLOC_PAYLOAD_ALIGNMENT 4`, `BLOC_SIZE_T uint16_t`, `BLOC_COUNT_T uint8_t`, `BLOC_REFCOUNT_T uint8_t`, `BLOC_THREAD_SAFE 0`, `BLOC_CHECKS 1`, `BLOC_DEBUG 0`, `BLOC_ASSERT_MESSAGES 1`, `BLOC_STATS 0`.
 3. Default `BLOC_PLATFORM_ASSERT(msg)` exactly as in spec section 6 (trap, no libc).
 4. Preprocessor validation with `#error` and the exact messages from spec section 6:
    - `#if BLOC_DEBUG && !BLOC_CHECKS` → `#error "BLOC_DEBUG requires BLOC_CHECKS"`.
@@ -367,9 +367,11 @@ Assertion messages are short string literals prefixed with the function name, e.
 | Helper | Compiled when | Purpose |
 | --- | --- | --- |
 | `static uint8_t *bloc_i_data_start(const struct bloc_handle *b)` | always | `(uint8_t *)(uintptr_t)b + BLOC_HEADER_SIZE` |
-| `static bool bloc_i_addr_valid(const struct bloc_handle *b)` | `BLOC_DEBUG` | Handle validity steps 2–5 (spec section 13), one `if` per step. Step 5 is the only `%` in the library (allowed under R-03 in debug builds only). |
-| `static bool bloc_i_handle_valid(const struct bloc_handle *b)` | `BLOC_DEBUG` | Step 1 (`refcount != 0`) then `bloc_i_addr_valid` |
-| `static bool bloc_i_overlaps(const void *ext, size_t n, const uint8_t *dst)` | `BLOC_DEBUG` | `n != 0 && ext < dst + n && dst < ext + n`, compared as `uintptr_t` |
+| `BLOC_I_ADDR_VALID(b)` (function-like macro) | `BLOC_DEBUG` | Handle validity steps 2–5 (spec section 13) as one expression. Step 5 uses the only `/` and `%` of the library (allowed under R-03 in debug builds only). |
+| `BLOC_I_HANDLE_VALID(b)` (function-like macro) | `BLOC_DEBUG` | Step 1 (`refcount != 0`) then `BLOC_I_ADDR_VALID` |
+| `BLOC_I_OVERLAPS(ext, n, dst)` (function-like macro) | `BLOC_DEBUG` | `n != 0 && ext < dst + n && dst < ext + n`, compared as `uintptr_t` |
+
+The three debug helpers are macros, not `static` functions: an out-of-line helper keeps the handle alive across a call, and GCC for PowerPC then emits the libgcc register save/restore helpers `_savegpr_*`/`_restgpr_*` at `-Os`, which R-03 forbids (EM-03); R-04 forbids inline attributes. Arguments are evaluated more than once, so they must be side-effect free (they are plain handle variables).
 
 Handle-taking functions other than retain/release start with two stages, matching the check order of spec section 13:
 
@@ -379,8 +381,8 @@ BLOC_I_CHECK(dst != NULL, "fn: dst is NULL", ret_invalid);
 BLOC_I_CHECK(src != NULL, "fn: src is NULL", ret_invalid);
 /* stage 2: debug validity for every handle argument, in parameter order */
 #if BLOC_DEBUG
-BLOC_I_REQUIRE(bloc_i_handle_valid(dst), "fn: invalid dst handle", ret_invalid);
-BLOC_I_REQUIRE(bloc_i_handle_valid(src), "fn: invalid src handle", ret_invalid);
+BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(dst), "fn: invalid dst handle", ret_invalid);
+BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(src), "fn: invalid src handle", ret_invalid);
 #endif
 ```
 
@@ -456,7 +458,7 @@ With `BLOC_CHECKS = 0` an uninitialized pool reaches the empty-list branch and r
 CHECK b != NULL                                     → BLOC_INVALID
 LOCK
 if refcount == 0:          UNLOCK; FAIL; return BLOC_INVALID       (always compiled)
-[DEBUG: if !bloc_i_addr_valid(b): UNLOCK; FAIL; return BLOC_INVALID]
+[DEBUG: if !BLOC_I_ADDR_VALID(b): UNLOCK; FAIL; return BLOC_INVALID]
 if refcount == BLOC_REFCOUNT_MAX: UNLOCK; return BLOC_OVERFLOW     (always compiled, no assert)
 refcount++
 UNLOCK; return BLOC_OK
@@ -468,7 +470,7 @@ UNLOCK; return BLOC_OK
 if b == NULL: return BLOC_OK                        (always compiled, before lock)
 LOCK
 if refcount == 0:          UNLOCK; FAIL; return BLOC_INVALID
-[DEBUG: if !bloc_i_addr_valid(b): UNLOCK; FAIL; return BLOC_INVALID]
+[DEBUG: if !BLOC_I_ADDR_VALID(b): UNLOCK; FAIL; return BLOC_INVALID]
 if refcount > 1: refcount--; UNLOCK; return BLOC_OK
 pool = b->link.pool                                 (read BEFORE writing next_free)
 refcount = 0; b->link.next_free = pool->free_head; pool->free_head = b
@@ -584,7 +586,7 @@ Each configuration is a separate CMake build directory. The library and all test
 | `nochecks` | yes | 4 | 4 | `uint16_t` | `uint8_t` | `uint8_t` | 0 | 0 | 0 | 0 | Minimal build; always-on checks only |
 | `wide` | yes | 1 | 8 | `uint32_t` | `uint16_t` | `uint16_t` | 1 | 0 | 1 | 1 (tracer) | Large types, `BA < PA` |
 | `noalign` | yes | 1 | 1 | `uint16_t` | `uint8_t` | `uint8_t` | 1 | 0 | 0 | 0 | Alignment disabled |
-| `bigalign` | yes | 64 | 16 | `uint16_t` | `uint8_t` | `uint32_t` | 1 | 1 | 0 | 0 | `BA > PA`, cache-line blocks, 32-bit refcount |
+| `bigalign` | yes | 64 | 16 | `uint16_t` | `uint8_t` | `uint32_t` | 1 | 1 | 0 | 0 | `BA > PA`, cache-line blocks, 32-bit refcount, `BLOC_ASSERT_MESSAGES 0` |
 | `pthread` | no | 4 | 4 | `uint16_t` | `uint16_t` | `uint16_t` | 1 | 0 | 0 | 1 (pthread mutex) | Thread stress under TSan only |
 
 All test configurations except `default` route `BLOC_PLATFORM_ASSERT(msg)` to `ts_assert_fail(msg)`. The `pthread` configuration defines the protect macros around one global `pthread_mutex_t` from `test/support/ts_pthread.c`. All configuration headers except `cfg_pthread.h` must compile freestanding for the tier-2 cross targets (section 3.6).
@@ -839,6 +841,7 @@ Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake tar
 | DBG-11 | Every CHK failure listed in 8.2–8.9 produces exactly one assertion in this configuration (covered by those tests' DBG notes; this test re-checks a representative per function). |
 | DBG-12 | Assertions never fire with the lock held: across the whole DBG suite `ts_assert_lock_depth` is always 0. |
 | DBG-13 | Valid runtime conditions never assert: empty pool, oversize headroom, refcount overflow, `BLOC_BUSY` deinit. |
+| DBG-14 | `BLOC_ASSERT_MESSAGES`: an assertion (e.g. `bloc_retain(NULL)`) passes a non-empty message to the handler when the option is `1` (`debug`) and a null pointer when it is `0` (`bigalign`). |
 
 ### 8.11 Thread safety (`test_thread.c`, `test_stress_pthread.c`)
 
@@ -892,7 +895,7 @@ The script loops over the tier-2 rows of section 3.6 × the applicable configura
 | ID | Requirement |
 | --- | --- |
 | XC-01 | `src/bloc.c` compiles with zero warnings (`-Werror`, flags of section 3.3) for every tier-2 target and every applicable configuration. |
-| XC-02 | `nm -u` on each object lists only `memcpy`, `memset` and the test hooks of the configuration (`ts_assert_fail`, `ts_lock_enter`, `ts_lock_exit`). With `BLOC_DEBUG = 1`, the target's unsigned division and modulo helpers are also allowed (`__aeabi_uidiv`, `__aeabi_uidivmod`, `__udivsi3`, `__umodsi3`, `__udivmodhi4`, `__udivmodsi4`). Any other symbol fails and is printed. A debug build with the default `BLOC_PLATFORM_ASSERT` is checked too (NH-02 equivalent). |
+| XC-02 | `nm -u` on each object lists only `memcpy`, `memset` and the test hooks of the configuration (`ts_assert_fail`, `ts_lock_enter`, `ts_lock_exit`). With `BLOC_DEBUG = 1`, the target's unsigned division and modulo helpers are also allowed (`__aeabi_uidiv`, `__aeabi_uidivmod`, `__udivsi3`, `__umodsi3`, `__udivmodhi4`, `__udivmodsi4`). On AVR, `__do_copy_data` is also allowed for a debug build whose configuration routes the assertion to a test hook and keeps `BLOC_ASSERT_MESSAGES` at `1`: avr-gcc references this startup symbol from every object with constants (spec section 2). Any other symbol fails and is printed. A debug build with the default `BLOC_PLATFORM_ASSERT` is checked too (NH-02 equivalent); there, and in `bigalign` (`BLOC_ASSERT_MESSAGES 0`), the AVR rows are strict. |
 | XC-03 | Same as XC-01 and XC-02 with Clang for its tier-2 targets. |
 | XC-04 | AVR: the `wide` configuration (`BLOC_SIZE_T uint32_t` with a 16-bit `size_t`) fails to compile with `BLOC_SIZE_T must not be wider than size_t`. This is a real-target counterpart to CF-09. |
 | XC-05 | `test/target/layout_static.c` compiles for every tier-2 target and configuration. It contains the compile-time parts of CFG-01..07, CFG-09 and CFG-11 as `_Static_assert`s, with the expected values computed from `sizeof`, `_Alignof` and the spec formulas. This proves the layout macros on 8-, 32- and 64-bit targets without executing anything. |
@@ -1040,7 +1043,7 @@ Steps: `apt_install.sh` (`id: install`) → `build_one.sh --versions <selector>`
 | 3 Layout, alignment | CFG-03..05, CFG-09, ALLOC-02, ALLOC-15, XC-05, CC-02, EM-01, EM-04 |
 | 4 Pool size, storage | CFG-01, CFG-02, CFG-07, CFG-09, POOL-06..10, LTO-01 (storage aliasing) |
 | 5 Handle, data model | CFG-05, CFG-10, ACC-01 |
-| 6 Configuration | CFG-06, CFG-08, CF-01..10, XC-04, FC-03, FC-04, LTO-02 |
+| 6 Configuration | CFG-06, CFG-08, CF-01..10, XC-04, FC-03, FC-04, LTO-02, DBG-14 |
 | 7 Pool lifecycle | POOL-01..23, XC-02 (no division in init) |
 | 8 Allocation | ALLOC-01..17 |
 | 9 Reference counting, sharing | REF-01..11, DBG-09, LEN-08 |

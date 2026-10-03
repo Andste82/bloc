@@ -179,11 +179,14 @@ bad_undefined_symbols() { # object debug(0|1) config-header-or-empty
         if grep -q 'ts_assert_fail' "$3"; then
             allowed="$allowed ts_assert_fail "
             # avr-gcc keeps string literals in RAM and marks an object that has some with the
-            # startup symbol __do_copy_data. The assertion messages of a debug build only become
-            # literals when a test hook receives them; the default assertion discards them.
-            case "$BLOC_CC" in
-            *avr-gcc*) [ "$2" -eq 1 ] && allowed="$allowed __do_copy_data " ;;
-            esac
+            # startup symbol __do_copy_data (spec section 2). The assertion messages of a debug
+            # build only become literals when a test hook receives them and
+            # BLOC_ASSERT_MESSAGES is not 0; the default assertion discards them.
+            if ! grep -qE '^#define BLOC_ASSERT_MESSAGES 0' "$3"; then
+                case "$BLOC_CC" in
+                *avr-gcc*) [ "$2" -eq 1 ] && allowed="$allowed __do_copy_data " ;;
+                esac
+            fi
         fi
         grep -q 'ts_lock_enter' "$3" && allowed="$allowed ts_lock_enter "
         grep -q 'ts_lock_exit' "$3" && allowed="$allowed ts_lock_exit "

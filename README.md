@@ -166,6 +166,7 @@ describes them in full, including the compile-time validation messages.
 | `BLOC_CHECKS` | `1` | Parameter and bounds checks that return status codes |
 | `BLOC_DEBUG` | `0` | Assertions for programming errors; requires `BLOC_CHECKS` |
 | `BLOC_PLATFORM_ASSERT(msg)` | trap | Called when a debug assertion fails |
+| `BLOC_ASSERT_MESSAGES` | `1` | `0` = the assertion handler gets a null pointer instead of a message, so no message text is compiled (saves about 2.6 KiB of RAM on classic AVRs) |
 | `BLOC_STATS` | `0` | High-water mark and allocation-failure counter |
 
 ## Building and testing
