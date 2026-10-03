@@ -1,6 +1,8 @@
 # BLOC V1 — Implementation Plan
 
-Plan revision 2 · 2026-10-03 · for `docs/BLOC_SPEC.md` revision 4
+Plan revision 3 · 2026-10-03 · for `docs/BLOC_SPEC.md` revision 4
+
+Revision 3 adds: CMake as the only build system and consumption via `FetchContent` (R-10, section 3.8, smoke tests FC-01..10 in section 9.8), and a multi-compiler, multi-architecture CI with emulated test execution (sections 3.6, 9.3, 9.6, 9.7, 10, Appendix A).
 
 This plan tells an implementing agent exactly what to build, in which order, and how to prove it is correct. It is written to be followed step by step without further design work. The specification `docs/BLOC_SPEC.md` is the source of truth for behaviour; this plan adds structure, tooling, test requirements and acceptance criteria.
 
@@ -31,6 +33,7 @@ This plan tells an implementing agent exactly what to build, in which order, and
 | R-07 | Do not add, remove or rename public API functions, types, macros or enum values beyond spec section 15 and the macros named in the spec. |
 | R-08 | Every behaviour must be reachable from the public API or from a documented white-box test technique (section 6.4). No test-only code paths in `src/` (no `#ifdef TESTING`, no `#ifdef COVERAGE`). |
 | R-09 | Minimal `.text` footprint (spec section 17): budgets on ARMv6-M and ARMv7-M, zero `.data`/`.bss`, no runtime helpers, and dead-strippable per function. Section 4.6 gives the implementation rules. |
+| R-10 | CMake is the only build system. Other projects consume BLOC with CMake `FetchContent` (or `add_subdirectory`) and link `bloc::bloc`; doing so has no side effects on the consuming project. Section 3.8 gives the rules, section 9.8 the smoke tests. No Makefiles, Meson, Bazel or IDE project files are added; the scripts in `scripts/` drive CMake or compile the single translation unit directly for checks, they are not an alternative build. |
 
 ### 1.2 Quality rules
 
@@ -43,6 +46,8 @@ This plan tells an implementing agent exactly what to build, in which order, and
 | Q-05 | All tests pass under AddressSanitizer + UndefinedBehaviorSanitizer with both GCC and Clang, and the thread stress test passes under ThreadSanitizer. |
 | Q-06 | Tests never hard-code layout numbers (4, 12, 16 …). They derive expected values from the public macros and the formulas in the spec, so the same test is valid in every configuration. |
 | Q-07 | The footprint gates of section 9.5 pass: spec budgets are met, and the regression baseline (`scripts/size_baseline.txt`) never grows without a justified update in the same commit. |
+| Q-08 | Many compilers, many architectures, many tests: the full unit test suite runs and passes on every tier-1 host compiler (oldest supported, middle and newest GCC and Clang, AppleClang) and on every tier-1E emulated target (32- and 64-bit, little- and big-endian) of section 3.6, not only on the developer's machine. |
+| Q-09 | The `FetchContent` smoke tests of section 9.8 pass. A change that breaks consumption by another CMake project is a defect even if all unit tests pass. |
 
 ### 1.3 Handling ambiguity
 
@@ -59,12 +64,15 @@ If something is unclear or the spec appears contradictory:
 
 ```text
 bloc/
-├── CMakeLists.txt                 top-level build (library, tests, options)
+├── CMakeLists.txt                 top-level build: library target, options, consumption rules (section 3.8)
 ├── CMakePresets.json              one configure preset per configuration (section 6)
-├── README.md                      overview, quick start, build/test instructions (phase 7)
+├── README.md                      overview, quick start, FetchContent usage, build/test instructions (phase 7)
 ├── LICENSE                        existing, MIT
 ├── .clang-format                  formatting rules (section 3.7)
-├── .github/workflows/ci.yml       CI pipeline (section 10)
+├── .github/workflows/
+│   ├── ci.yml                     CI pipeline: gate, fan-out matrix, ci-ok (section 10, Appendix A)
+│   └── _target.yml                reusable per-target workflow, called from ci.yml (section 10.3)
+├── cmake/toolchains/              toolchain files for the tier-1E emulated targets (section 3.6)
 ├── docs/
 │   ├── BLOC_SPEC.md               specification (existing)
 │   ├── IMPLEMENTATION_PLAN.md     this file
@@ -84,7 +92,12 @@ bloc/
 │   ├── cross_check.sh             cross-compile matrix and symbol check (section 9.4)
 │   ├── check_size.sh              footprint report and gates (section 9.5)
 │   ├── size_baseline.txt          committed footprint regression baseline
-│   └── run_all.sh                 everything CI does, locally
+│   ├── fetchcontent_smoke.sh      FetchContent consumer smoke tests (section 9.8)
+│   ├── run_all.sh                 everything CI does, locally
+│   └── ci/
+│       ├── target_table.sh        single source of truth: target name → compiler, flags, emulator, configs
+│       ├── build_one.sh           build (and test) one target × configuration × build type
+│       └── apt_install.sh         apt-get with retries, used by every CI job
 └── test/
     ├── CMakeLists.txt
     ├── configs/                   one header per test configuration (section 6)
@@ -92,6 +105,12 @@ bloc/
     ├── compile_fail/              sources that must fail to compile (section 8.1)
     ├── target/                    compile-only static layout checks for cross targets (XC-05)
     ├── size/                      minimal link programs for dead-strip checks (FP-05)
+    ├── fetchcontent_smoke/        stand-alone consumer project (section 9.8), never added by test/CMakeLists.txt
+    │   ├── CMakeLists.txt         consumes BLOC exactly as the README shows; hygiene assertions
+    │   ├── main.c                 uses the API and cross-checks consumer vs. library layout
+    │   ├── config/smoke_opts.h    consumer configuration header (FC-03)
+    │   └── toolchain-cortex-m0plus.cmake   bare-metal consumer (FC-08)
+    ├── test_platform.c            target property self-check for emulated targets (EM-04)
     └── test_*.c                   Unity test files (section 8)
 ```
 
@@ -103,7 +122,7 @@ bloc/
 
 | Tool | Version | Use |
 | --- | --- | --- |
-| CMake | ≥ 3.20 (devcontainer: 4.2) | Build, CTest |
+| CMake | ≥ 3.20 (devcontainer: 4.2); the floor 3.20 is tested in CI (FC-07) | The only build system (R-10), CTest |
 | Ninja | any (devcontainer: 1.13) | CMake generator |
 | GCC | ≥ 11 (devcontainer: 15.2) | Host compiler, coverage (`gcov`), sanitizers |
 | Clang | ≥ 14 (devcontainer: 21.1) | Host compiler, sanitizers; ARM and RISC-V cross compiler |
@@ -113,8 +132,12 @@ bloc/
 | gcovr | ≥ 7.0 (devcontainer: 7.2) | Coverage report and gate (`--fail-under-function` needs ≥ 7) |
 | Unity | v2.6.1 (tag), fetched with CMake `FetchContent` | Unit test framework |
 | binutils `nm`, `size` (host and `<triple>-` prefixed) | any | Symbol and footprint checks |
+| Linux cross GCCs: `gcc-aarch64-linux-gnu`, `gcc-arm-linux-gnueabihf`, `gcc-riscv64-linux-gnu`, `gcc-powerpc-linux-gnu`, `gcc-s390x-linux-gnu` | distro default | Tier-1E emulated targets (section 3.6) |
+| `qemu-user-static` | distro default | Runs the tier-1E test binaries (user-mode emulation) |
+| `gcc-multilib` | distro default | 32-bit host build (CC-02) |
+| Python `venv` + `pip install cmake==3.20.*` | – | CMake floor check (FC-07), CI only |
 
-The devcontainer (`.devcontainer/Dockerfile`, Ubuntu 26.04) is the reference environment. Footprint baselines are only valid for the compiler versions recorded in them (section 9.5). There is no QEMU in the devcontainer, so cross targets are compile-, link- and symbol-checked but do not run tests (section 3.6, tier 3).
+The devcontainer (`.devcontainer/Dockerfile`, Ubuntu 26.04) is the reference environment. Footprint baselines are only valid for the compiler versions recorded in them (section 9.5). Bare-metal cross targets (tier 2) are compile-, link- and symbol-checked but do not run tests. The tier-1E emulated targets do run the full test suite; their packages (Linux cross GCCs, `qemu-user-static`, `gcc-multilib`) are installed in CI and should be added to the devcontainer. Where they are missing locally, `scripts/run_all.sh` prints a visible `SKIP` line for each affected target instead of failing.
 
 Unity is fetched at configure time:
 
@@ -129,24 +152,35 @@ FetchContent_MakeAvailable(unity)
 
 ### 3.2 CMake options
 
+Options available in every build, including when BLOC is consumed by another project:
+
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `BLOC_BUILD_TESTS` | `ON` when top-level project | Build tests and register them with CTest |
-| `BLOC_BUILD_EXAMPLES` | `ON` when top-level project | Build `examples/` |
+| `BLOC_BUILD_TESTS` | `ON` when top-level project, else `OFF` | Build tests and register them with CTest. Setting it `ON` while BLOC is not the top-level project is a configure error (`BLOC tests can only be built when BLOC is the top-level project`). |
+| `BLOC_BUILD_EXAMPLES` | `ON` when top-level project, else `OFF` | Build `examples/` |
+| `BLOC_WERROR` | `ON` when top-level project, else `OFF` | Add `-Werror` to the `bloc` target (PRIVATE). Off for consumers, so a newer consumer compiler cannot break their build with a new warning. |
+| `BLOC_CONFIG_HEADER` | empty | Project configuration header (spec section 6), e.g. `bloc_opts.h`. If set, `BLOC_CONFIG_HEADER="<value>"` becomes a PUBLIC compile definition of `bloc` (section 3.8, CM-06). |
+| `BLOC_CONFIG_DIRS` | empty | Absolute include directories (`;`-list) that contain `BLOC_CONFIG_HEADER`; PUBLIC include directories of `bloc`. A relative path is a configure error. |
+
+Options that exist **only** when BLOC is the top-level project (they are not even defined as cache entries otherwise, FC-02):
+
+| Option | Default | Meaning |
+| --- | --- | --- |
 | `BLOC_TEST_CONFIG` | `default` | One of `default`, `debug`, `nochecks`, `wide`, `noalign`, `bigalign`, `pthread` |
 | `BLOC_COVERAGE` | `OFF` | Adds `-O0 -g --coverage` to library and tests (GCC only) |
 | `BLOC_SANITIZE` | empty | Comma list passed to `-fsanitize=`, e.g. `address,undefined` or `thread` |
+| `BLOC_LTO` | `OFF` | `INTERPROCEDURAL_OPTIMIZATION` on library, test support and tests, plus `-O3 -fstrict-aliasing` (LTO-01). Uses `check_ipo_supported()`; CMake then picks `gcc-ar`/`llvm-ar` itself. |
 
-The host compiler is chosen with the preset (`CMAKE_C_COMPILER`), not with an option. Preset names are `<compiler>-<cfg>` (Debug, `-O0`), `<compiler>-<cfg>-rel` (Release, `-O2`), `<compiler>-<cfg>-size` (MinSizeRel, `-Os`), `cov-<cfg>` (GCC coverage) and `san-<compiler>-<cfg>` (sanitizers), with `<compiler>` ∈ {`gcc`, `clang`}. Build directories are `build/<preset>`.
+The host compiler is chosen with the preset (`CMAKE_C_COMPILER`), not with an option. Preset names are `<compiler>-<cfg>` (Debug, `-O0`), `<compiler>-<cfg>-rel` (Release, `-O2`), `<compiler>-<cfg>-size` (MinSizeRel, `-Os`), `cov-<cfg>` (GCC coverage), `san-<compiler>-<cfg>` (sanitizers) and `lto-<compiler>-<cfg>` (LTO), with `<compiler>` ∈ {`gcc`, `clang`}. Build directories are `build/<preset>`. CI does not use presets; it calls `scripts/ci/build_one.sh`, which passes the same cache variables (section 10.4).
 
-`BLOC_TEST_CONFIG` selects `test/configs/cfg_<name>.h`. For every value except `default`, the build adds `BLOC_CONFIG_HEADER="cfg_<name>.h"` (quoted string) and `test/configs` plus `test/support` to the include path **of both the library and the tests**, so library and tests are always compiled with the same configuration. For `default`, `BLOC_CONFIG_HEADER` is not defined at all; this proves the library builds with zero configuration.
+`BLOC_TEST_CONFIG` selects `test/configs/cfg_<name>.h`. For every value except `default`, the top-level build sets `BLOC_CONFIG_HEADER=cfg_<name>.h` and `BLOC_CONFIG_DIRS=<abs>/test/configs;<abs>/test/support` before the library target is created. The test configurations therefore use **the same mechanism a consumer uses** (section 3.8), and because the definition and include directories are PUBLIC, the library and every test are always compiled with the same configuration. For `default`, `BLOC_CONFIG_HEADER` is not defined at all; this proves the library builds with zero configuration. Setting both `BLOC_TEST_CONFIG` (≠ `default`) and `BLOC_CONFIG_HEADER` is a configure error.
 
 Targets:
 
-- `bloc` — static library from `src/bloc.c`, public include dir `include/`, alias `bloc::bloc`.
-- `bloc_test_support` — static library from `test/support/*.c`.
-- one executable per `test/test_*.c`, each linking `bloc`, `bloc_test_support` and `unity`, each registered with `add_test`.
-- `compile_fail_*` targets (section 8.1).
+- `bloc` — the only target defined when BLOC is consumed: static library from `src/bloc.c`, public include dir `include/`, alias `bloc::bloc`. Rules in section 3.8.
+- `bloc_test_support` — static library from `test/support/*.c` (tests only).
+- one executable per `test/test_*.c`, each linking `bloc::bloc`, `bloc_test_support` and `unity`, each registered with `add_test` (tests only).
+- `compile_fail_*` targets (section 8.1, tests only).
 
 ### 3.3 Compiler flags
 
@@ -185,12 +219,20 @@ Some targets in the matrix differ from a 64-bit host, and the code must be corre
 
 | Tier | Compiler | Targets / flags | What runs |
 | --- | --- | --- | --- |
-| 1 Host | GCC, Clang | native x86-64 (`-m32` optional, CC-02) | Full build, all unit tests, compile-fail tests, in all 7 configurations; sanitizers; GCC coverage |
+| 1 Host (reference) | GCC 15, Clang 21 (`ubuntu:26.04`, = devcontainer) | native x86-64 | Full build, all unit tests, compile-fail tests, in all 7 configurations at Debug, plus Release/MinSizeRel (CC-01, CC-03); sanitizers; GCC coverage; LTO (LTO-01); no-heap; FetchContent smoke |
+| 1 Host (older) | GCC 13, Clang 18 (`ubuntu:24.04`); GCC 11, Clang 14 (`ubuntu:22.04`, oldest supported) | native x86-64 | Same build and test scope as the reference row, no coverage or sanitizers (CC-04) |
+| 1 Host (32-bit) | GCC 15 with `-m32` (`gcc-multilib`) | i386 | All 7 configurations at Debug, `default` at Release (CC-02) |
+| 1 Host (macOS) | AppleClang (`macos-latest`) | native arm64, Mach-O | All 7 configurations at Debug, `default` at Release; FetchContent smoke FC-01 (CC-05) |
+| 1E Emulated | Linux cross GCC, static linking, tests run under `qemu-<arch>-static` (user mode) | `aarch64` (64-bit LE); `armhf` (`arm-linux-gnueabihf`, ARMv7 32-bit LE); `riscv64` (64-bit LE); `powerpc` (32-bit **big-endian**); `s390x` (64-bit **big-endian**) | All unit tests in all 7 configurations at Debug, `default` and `nochecks` at MinSizeRel; symbol check (EM-01..04) |
 | 2 Cross | `arm-none-eabi-gcc` | ARMv6-M `-mcpu=cortex-m0plus -mthumb`; ARMv7-M `-mcpu=cortex-m3 -mthumb`; ARMv7E-M `-mcpu=cortex-m4 -mthumb -mfloat-abi=soft`; ARMv7-A `-mcpu=cortex-a7 -mthumb -mfloat-abi=soft`; ARMv7-R `-mcpu=cortex-r5 -mthumb -mfloat-abi=soft` | Library compile, static layout checks, symbol check, footprint, dead-strip link |
 | 2 Cross | Clang | `--target=thumbv6m-none-eabi -mcpu=cortex-m0plus`; `--target=thumbv7m-none-eabi -mcpu=cortex-m3`; `--target=riscv32-unknown-elf -march=rv32imac -mabi=ilp32` | Library compile, static layout checks, symbol check, footprint |
 | 2 Cross | `riscv64-unknown-elf-gcc` | RV32IMAC `-march=rv32imac -mabi=ilp32`; RV32I `-march=rv32i -mabi=ilp32` (no divider); RV64IMAC `-march=rv64imac -mabi=lp64` | Library compile, static layout checks, symbol check, footprint |
 | 2 Cross | `avr-gcc` | `-mmcu=atmega328p` (16-bit `int`, `size_t` and pointers) | Library compile, static layout checks, symbol check, footprint |
 | 3 Target execution | any tier-2 compiler + QEMU | — | Optional and not required. Registered only if `qemu-system-arm` is found: runs the unit tests on `mps2-an385` (Cortex-M3) with semihosting. Not part of any gate. |
+
+Why so many rows: each one catches a class of bugs the others cannot. Older compilers catch reliance on recent C11 support and different warning sets. `-m32` and `armhf`/`powerpc` give 32-bit pointers and `size_t` with real test execution. `powerpc` and `s390x` are big-endian, so any test or helper that silently assumes byte order fails there. AppleClang is a different vendor toolchain with a non-ELF object format. The bare-metal tier 2 adds 8- and 16-bit `int`, no hardware divider and strict alignment, and is where size is measured.
+
+Tier-1E details: each target has a CMake toolchain file `cmake/toolchains/linux-<arch>.cmake` that sets `CMAKE_SYSTEM_NAME Linux`, `CMAKE_SYSTEM_PROCESSOR`, `CMAKE_C_COMPILER <triple>-gcc`, `CMAKE_EXE_LINKER_FLAGS_INIT -static` and `CMAKE_CROSSCOMPILING_EMULATOR qemu-<arch>-static` (`qemu-aarch64-static`, `qemu-arm-static`, `qemu-riscv64-static`, `qemu-ppc-static`, `qemu-s390x-static`). With static linking and an explicit emulator, `ctest` runs the binaries without a sysroot and without `binfmt_misc`, which a CI container cannot register. If a package name differs on the CI image, keep the target's properties (word size, endianness) and record the substitution in `docs/OPEN_QUESTIONS.md`.
 
 Tier-2 configurations: every test configuration except `pthread`. AVR also excludes `wide`, which must fail there with the expected message (XC-04). Test configuration headers, and the support headers they include, must therefore compile freestanding: they may only include the headers allowed by R-02.
 
@@ -200,6 +242,103 @@ Tier-2 configurations: every test configuration except `pthread`. AVR also exclu
 - Public symbols prefixed `bloc_` / `BLOC_`; internal `static` helpers prefixed `bloc_i_`.
 - Every public function has a Doxygen comment in `bloc.h`: brief, parameters, return values (every status code it can return), thread-safety note.
 - Use `0u`, `1u` for unsigned literals; explicit casts when narrowing (`b->offset = (bloc_size_t)(b->offset - n);`).
+
+### 3.8 CMake project rules and consumption by other projects (R-10)
+
+BLOC is meant to be pulled into firmware and host projects with a few lines of CMake. The top-level `CMakeLists.txt` is therefore written for two audiences: BLOC's own developers and CI (top-level build, everything enabled), and consumers (subproject build, exactly one library target, no side effects).
+
+#### Supported consumption
+
+```cmake
+# >>> bloc-fetchcontent  (this block is kept identical in README.md and test/fetchcontent_smoke/CMakeLists.txt, FC-10)
+include(FetchContent)
+FetchContent_Declare(bloc
+  GIT_REPOSITORY https://github.com/Andste82/bloc.git
+  GIT_TAG        ${BLOC_GIT_TAG}   # a release tag such as v1.0.0, or a full commit hash
+  GIT_SHALLOW    ${BLOC_GIT_SHALLOW})
+# optional project configuration (spec section 6):
+# set(BLOC_CONFIG_HEADER "bloc_opts.h")
+# set(BLOC_CONFIG_DIRS   "${CMAKE_CURRENT_SOURCE_DIR}/config")
+FetchContent_MakeAvailable(bloc)
+# <<< bloc-fetchcontent
+
+target_link_libraries(my_app PRIVATE bloc::bloc)
+```
+
+In the README the two variables are replaced by literal values (`v1.0.0`, `TRUE`); the FC-10 check compares the blocks after that substitution. `add_subdirectory(path/to/bloc)` works the same way (FetchContent uses it internally) and is documented in one sentence. To test a local checkout without network access, consumers and CI use CMake's standard override `-DFETCHCONTENT_SOURCE_DIR_BLOC=/path/to/bloc`; the consumer's `CMakeLists.txt` stays unchanged.
+
+#### Top-level `CMakeLists.txt` skeleton
+
+```cmake
+cmake_minimum_required(VERSION 3.20...4.2)
+project(bloc VERSION 1.0.0 LANGUAGES C)       # C only: consumers need no C++ compiler
+
+# PROJECT_IS_TOP_LEVEL needs CMake 3.21; the floor is 3.20, so detect it directly.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(BLOC_IS_TOP_LEVEL ON)
+else()
+  set(BLOC_IS_TOP_LEVEL OFF)
+endif()
+
+option(BLOC_BUILD_TESTS    "Build the BLOC unit tests"               ${BLOC_IS_TOP_LEVEL})
+option(BLOC_BUILD_EXAMPLES "Build the BLOC examples"                 ${BLOC_IS_TOP_LEVEL})
+option(BLOC_WERROR         "Treat warnings in BLOC sources as errors" ${BLOC_IS_TOP_LEVEL})
+
+# Guarded so that a consumer's normal variable wins on the first configure too.
+# (Under CMake 3.20, policy CMP0126 does not exist and set(CACHE) would hide it.)
+if(NOT DEFINED BLOC_CONFIG_HEADER)
+  set(BLOC_CONFIG_HEADER "" CACHE STRING "BLOC project configuration header, e.g. bloc_opts.h")
+endif()
+if(NOT DEFINED BLOC_CONFIG_DIRS)
+  set(BLOC_CONFIG_DIRS "" CACHE STRING "Absolute include directories containing BLOC_CONFIG_HEADER")
+endif()
+
+if(BLOC_IS_TOP_LEVEL)
+  # BLOC_TEST_CONFIG, BLOC_COVERAGE, BLOC_SANITIZE, BLOC_LTO are defined here only;
+  # BLOC_TEST_CONFIG maps onto BLOC_CONFIG_HEADER / BLOC_CONFIG_DIRS (section 3.2).
+endif()
+
+add_library(bloc STATIC src/bloc.c)
+add_library(bloc::bloc ALIAS bloc)
+target_include_directories(bloc PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
+target_compile_features(bloc PUBLIC c_std_11)
+set_target_properties(bloc PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+if(BLOC_CONFIG_HEADER)
+  # check every BLOC_CONFIG_DIRS entry with IS_ABSOLUTE, FATAL_ERROR otherwise
+  target_compile_definitions(bloc PUBLIC "BLOC_CONFIG_HEADER=\"${BLOC_CONFIG_HEADER}\"")
+  target_include_directories(bloc PUBLIC ${BLOC_CONFIG_DIRS})
+endif()
+target_compile_options(bloc PRIVATE
+  $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:<library warning flags of section 3.3>>
+  $<$<C_COMPILER_ID:GNU>:-Wcast-align=strict>
+  $<$<AND:$<BOOL:${BLOC_WERROR}>,$<C_COMPILER_ID:GNU,Clang,AppleClang>>:-Werror>)
+
+if(BLOC_BUILD_TESTS)
+  if(NOT BLOC_IS_TOP_LEVEL)
+    message(FATAL_ERROR "BLOC tests can only be built when BLOC is the top-level project")
+  endif()
+  enable_testing()
+  add_subdirectory(test)          # Unity is fetched in here, never above
+endif()
+if(BLOC_BUILD_EXAMPLES)
+  add_subdirectory(examples)
+endif()
+```
+
+#### Rules
+
+| ID | Rule |
+| --- | --- |
+| CM-01 | The consumer-visible result of `FetchContent_MakeAvailable(bloc)` with default options is exactly one buildable target, `bloc` (STATIC), with the alias `bloc::bloc`. No other targets, no subdirectories, no tests, no Unity download. Consumers link `bloc::bloc`. |
+| CM-02 | Usage requirements of `bloc` are exactly: the `include/` directory (`BUILD_INTERFACE`), the compile feature `c_std_11`, and, if configured, the `BLOC_CONFIG_HEADER` definition plus `BLOC_CONFIG_DIRS`. `INTERFACE_LINK_LIBRARIES` and `INTERFACE_COMPILE_OPTIONS` are empty: warning, coverage, sanitizer and LTO flags are PRIVATE or test-only and never reach the consumer. |
+| CM-03 | No global side effects. BLOC's CMake code never calls `add_compile_options`, `add_link_options`, `add_definitions`, `include_directories`, `link_libraries` or `include(CTest)`, never sets `CMAKE_C_FLAGS*`, `CMAKE_C_STANDARD`, `CMAKE_BUILD_TYPE`, `CMAKE_*_OUTPUT_DIRECTORY` or `CMAKE_POSITION_INDEPENDENT_CODE`, and never writes `PARENT_SCOPE` variables. All flags are set per target. |
+| CM-04 | Namespace hygiene. Cache entries created by BLOC start with `BLOC_` (plus the `bloc_*` entries that `project()` creates). Test-only options (`BLOC_TEST_CONFIG`, `BLOC_COVERAGE`, `BLOC_SANITIZE`, `BLOC_LTO`) exist only in a top-level build. |
+| CM-05 | Location independence. Inside BLOC's CMake files, paths are built from `CMAKE_CURRENT_SOURCE_DIR`, `CMAKE_CURRENT_BINARY_DIR` or `bloc_SOURCE_DIR`; `CMAKE_SOURCE_DIR` and `CMAKE_BINARY_DIR` appear only in the top-level detection. |
+| CM-06 | Configuration consistency (no ODR split). The project configuration header is applied to the `bloc` target as a PUBLIC definition, never to the consumer's target alone, so the library and every consumer translation unit see the same `struct bloc_handle`, `struct bloc_pool` and layout macros. A consumer that defines `BLOC_CONFIG_HEADER` only on its own target gets a silently mismatched layout; FC-04 proves the smoke test detects exactly that. |
+| CM-07 | The library compiles as C11 regardless of the consumer's `CMAKE_C_STANDARD` (target property `C_STANDARD 11`). The public headers must also compile in consumer translation units built as C11, C17 and C23 with strict warnings (FC-05). |
+| CM-08 | Portable configure. No `try_run`, no `check_*_runs`, no `find_package`, no `CMAKE_BUILD_TYPE` checks (multi-config generators must work), no network access unless `BLOC_BUILD_TESTS` is on. Configuring with a bare-metal toolchain file (`CMAKE_SYSTEM_NAME Generic`, `CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY`) and with compilers other than GCC/Clang must work; unknown compilers simply get no warning flags. |
+| CM-09 | Versioning. `project(bloc VERSION X.Y.Z)` matches the release tag `vX.Y.Z`. Consumers are told to pin a tag or a full commit hash, never a branch. |
+| CM-10 | Out of scope for V1: `install()`, `export()`, a package config for `find_package(bloc)`, and shared-library builds. `bloc` is always STATIC and ignores `BUILD_SHARED_LIBS`. If a consumer needs position-independent code, they set `CMAKE_POSITION_INDEPENDENT_CODE` in their own project, which reaches `bloc` like any other target. |
 
 ---
 
@@ -772,7 +911,7 @@ Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake tar
 
 | ID | Requirement |
 | --- | --- |
-| NH-01 | Host check (the cross-target equivalent is XC-02). Build the library in release mode (`-O2`, no coverage, no sanitizers, `-fno-stack-protector`) for configurations `default` and `debug`. Run `nm -u` on the object file. The set of undefined symbols must be a subset of `{memcpy, memset}` (plus the test hooks `ts_assert_fail`, `ts_lock_enter`, `ts_lock_exit` in `debug`). Any other symbol fails the check, and the script prints it. |
+| NH-01 | Host check (the cross-target equivalent is XC-02). Build the library in release mode (`-O2`, no coverage, no sanitizers, `-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0`; Ubuntu's GCC enables fortification by default, which would turn `memcpy` into `__memcpy_chk`) for configurations `default` and `debug`. Run `nm -u` on the object file. The set of undefined symbols must be a subset of `{memcpy, memset}` (plus the test hooks `ts_assert_fail`, `ts_lock_enter`, `ts_lock_exit` in `debug`). Any other symbol fails the check, and the script prints it. |
 | NH-02 | Same check for a `debug` build that uses the **default** `BLOC_PLATFORM_ASSERT` (no test hook): undefined symbols ⊆ `{memcpy, memset}`. This proves the trapping default needs no C library. |
 | NH-03 | `grep` over `src/` and `include/` finds no `#include` other than `bloc.h`, `bloc_opt.h`, `<stddef.h>`, `<stdint.h>`, `<stdbool.h>`, `<string.h>`, and no occurrence of `malloc`, `calloc`, `realloc`, `aligned_alloc`, `free(`, `memmove`, `alloca` (not even in comments, so the check stays a plain grep; `bloc_calloc` is matched as a whole word and allowed). |
 
@@ -789,12 +928,14 @@ Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake tar
 | ID | Requirement |
 | --- | --- |
 | CC-01 | All seven configurations build without warnings and pass all tests, including compile-fail tests, with GCC and with Clang at Debug (`-O0`). |
-| CC-02 | Optional 32-bit job (`-m32`, needs `gcc-multilib`, which is not in the devcontainer): `default` configuration passes; `sizeof(struct bloc_handle) == 12` there. |
+| CC-02 | 32-bit host (`-m32`, needs `gcc-multilib`): all seven configurations pass at Debug and `default` at Release; `sizeof(struct bloc_handle) == 12` in `default`. Required in CI (`host` job); optional locally, where a missing `gcc-multilib` gives a `SKIP` line. |
 | CC-03 | Configurations `default`, `debug` and `nochecks` additionally pass with both compilers at Release (`-O2`) and MinSizeRel (`-Os`). This catches optimization-dependent undefined behaviour in the configuration used for footprint measurement. |
+| CC-04 | Older compilers: CC-01 and CC-03 also pass with the default GCC and Clang of `ubuntu:24.04` (GCC 13, Clang 18) and `ubuntu:22.04` (GCC 11, Clang 14, the oldest supported versions of section 3.1), with zero warnings. `build_one.sh` prints `$CC --version` first, so the log shows the exact version tested. If an old compiler emits a false-positive warning that cannot be avoided by better code, disable that one warning for that compiler version only in CMake, with a comment, and record it in `docs/OPEN_QUESTIONS.md`. |
+| CC-05 | macOS: on `macos-latest` (AppleClang, arm64, Mach-O), all seven configurations pass at Debug and `default` at Release, and FC-01 passes. No coverage, sanitizer, symbol or size checks there (`nm` and section names differ on Mach-O). |
 
 ### 9.4 Cross compilers (tier 2, `scripts/cross_check.sh`)
 
-The script loops over the tier-2 rows of section 3.6 × the applicable configurations. It calls the compilers directly on the single translation unit (no CMake toolchain files) and prints one result line per combination. It exits non-zero if any combination fails, and skips a compiler with a visible `SKIP` line only if it is not installed. In CI and in the devcontainer every compiler is required.
+The script loops over the tier-2 rows of section 3.6 × the applicable configurations by calling `scripts/ci/build_one.sh` for each combination (section 10.4); `--family <name>` restricts it to one CI target family. For bare-metal targets `build_one.sh` calls the compilers directly on the single translation unit (no CMake toolchain files) and prints one result line per combination. It exits non-zero if any combination fails, and skips a compiler with a visible `SKIP` line only if it is not installed. In CI and in the devcontainer every compiler is required.
 
 | ID | Requirement |
 | --- | --- |
@@ -821,23 +962,124 @@ Measured matrix:
 | FP-05 | Dead-stripping: `test/size/min_app.c` calls only `bloc_pool_init`, `bloc_alloc` and `bloc_release`. Linked for ARMv6-M with `-ffunction-sections -Wl,--gc-sections --specs=nosys.specs`, the final ELF contains no other `bloc_` function (`nm` check), and its BLOC contribution is smaller than the FP-02 measurement of the full API. |
 | FP-06 | Size and correctness are measured on identical code. The footprint objects use the same sources and configurations as the tier-1 tests; CC-03 runs those configurations at `-Os` on the host. |
 
+`check_size.sh` also accepts `--family <name>`; in CI each bare-metal family job measures its own rows, appends its part of the FP-01 table to the job summary (`$GITHUB_STEP_SUMMARY`) and uploads it as artifact `size-<family>`. Run without arguments (locally), it produces the complete `build/size/report.md`.
+
+### 9.6 Emulated targets (tier 1E)
+
+| ID | Requirement |
+| --- | --- |
+| EM-01 | For each tier-1E target of section 3.6, all seven configurations build with the target's toolchain file at Debug with zero warnings, and the complete CTest suite passes under `qemu-<arch>-static`. |
+| EM-02 | `default` and `nochecks` additionally pass at MinSizeRel (`-Os`) on every tier-1E target. |
+| EM-03 | Symbol check on the MinSizeRel library object of `default`, and of `debug` with the default `BLOC_PLATFORM_ASSERT`, built with `-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0`: undefined symbols ⊆ `{memcpy, memset}` (debug may add the division helpers allowed by R-03). Uses `<triple>-nm`. |
+| EM-04 | `test/test_platform.c` is built only when the build passes `BLOC_EXPECT_BIG_ENDIAN` and `BLOC_EXPECT_PTR_BITS` (set by `build_one.sh` from the target table). It asserts at run time that the byte order (checked through a `uint32_t`/`uint8_t[4]` union) and `sizeof(void *) * CHAR_BIT` match the table. This proves that each emulated job really executed code for the architecture it claims, and not, for example, a host binary. It is in `test/`, not `src/`, so coverage is unaffected (R-08). |
+
+Layout tests need no per-target expectations: by Q-06 they derive every expected value from `sizeof`, `_Alignof` and the spec formulas, so they are automatically valid on 32-bit and big-endian targets.
+
+### 9.7 Link-time optimization
+
+| ID | Requirement |
+| --- | --- |
+| LTO-01 | With `BLOC_LTO=ON` (`-O3 -fstrict-aliasing`, interprocedural optimization across library, test support and tests), configurations `default`, `debug` and `nochecks` pass all tests with GCC and with Clang. |
+| LTO-02 | The LTO links are warning-free with `-Werror` at link time. GCC's `-Wlto-type-mismatch` (on by default) then reports any translation unit that sees a different `struct bloc_handle` or `struct bloc_pool` than the library, which is a second, independent guard for CM-06. |
+
+Rationale: storage is a `uint8_t` array that the library accesses through `struct bloc_handle` lvalues (spec section 4, the lwIP `memp` idiom). LTO is the only build in which the optimizer sees the test's storage declaration and the library's accesses at the same time, so it is the only place where a type-based aliasing assumption can surface. No sanitizer substitutes: UBSan does not model strict aliasing. If LTO-01 fails because of aliasing, this is a spec-level question; record it in `docs/OPEN_QUESTIONS.md`, and do not hide it with `-fno-strict-aliasing`.
+
+### 9.8 FetchContent consumer smoke tests (`scripts/fetchcontent_smoke.sh`)
+
+`test/fetchcontent_smoke/` is a stand-alone consumer project. It is never added by BLOC's own `CMakeLists.txt`; it is configured from outside, like a real user project. Its `CMakeLists.txt` contains the `bloc-fetchcontent` block of section 3.8 (with `BLOC_GIT_TAG` defaulting to `master` and `BLOC_GIT_SHALLOW` to `TRUE`), an executable `smoke` from `main.c` linked to `bloc::bloc`, `enable_testing()` and `add_test(NAME smoke COMMAND smoke)`, plus the configure-time hygiene assertions of FC-02. The consumer compiles `main.c` with its own strict flags: `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Werror`.
+
+`main.c` uses only the public API and returns a distinct non-zero code for each failed check (no `stdio`, so it also links bare-metal):
+
+1. Declares storage with `BLOC_POOL_STORAGE` for N = 4 elements of E = 64 bytes; `bloc_pool_init` returns `BLOC_OK`.
+2. **Layout cross-check (the ODR detector).** Allocates two buffers with headroom 8. Checks that the first handle is at the storage base, that the distance between the two handles equals `BLOC_BLOCK_STRIDE(E)`, and that `bloc_data(h) - (uint8_t *)h == BLOC_HEADER_SIZE + 8`. These values are computed by the library on one side and by the consumer's macros on the other, so they only agree if both were compiled with the same configuration. This check runs before anything else that depends on the layout.
+3. From phase 4: appends a payload with `bloc_append_data`, adds a 4-byte header with `bloc_add_header`, reads both back with `bloc_copy_to` and compares them.
+4. With `BLOC_STATS`: `bloc_pool_get_stats` reports a high-water mark of 2.
+5. Releases both buffers; `bloc_pool_free_count` is N; `bloc_pool_deinit` returns `BLOC_OK`.
+
+`config/smoke_opts.h` is the consumer's configuration header: `BLOC_BLOCK_ALIGNMENT 32`, `BLOC_PAYLOAD_ALIGNMENT 16`, `BLOC_SIZE_T uint32_t`, `BLOC_COUNT_T uint16_t`, `BLOC_STATS 1`. Every type is at least as wide as the default, so in the deliberate mismatch of FC-04 the library (default layout) never writes past the consumer's (larger) structures, and the test fails cleanly instead of corrupting memory.
+
+`scripts/fetchcontent_smoke.sh <variant>...` runs the variants below. Each one uses a fresh build directory `build/fc/<variant>` and its own `FETCHCONTENT_BASE_DIR`, and, except for `online`, passes `-DFETCHCONTENT_SOURCE_DIR_BLOC=<repo root>`, so the current checkout is consumed without network access. Without arguments it runs all offline variants.
+
+| ID | Variant | Requirement |
+| --- | --- | --- |
+| FC-01 | `basic` | Fresh configure, build and `ctest` of the smoke project with no BLOC options set: `smoke` passes. Proves that consumption works and that the public headers are warning-free under the consumer's strict flags. |
+| FC-02 | (all variants) | Hygiene, asserted at configure time in the smoke `CMakeLists.txt` with `FATAL_ERROR`: the `BUILDSYSTEM_TARGETS` directory property of `bloc_SOURCE_DIR` is exactly `bloc`, and its `SUBDIRECTORIES` property is empty; `TARGET unity` is false, and `FetchContent_GetProperties(unity)` reports it as not populated; `INTERFACE_LINK_LIBRARIES` and `INTERFACE_COMPILE_OPTIONS` of `bloc` are empty; `COMPILE_OPTIONS` of `bloc` contain none of `-Werror`, `--coverage`, `-fsanitize`, `-flto`; cache entries that are new after `FetchContent_MakeAvailable` all match `^(BLOC_|bloc_|FETCHCONTENT_)`, and `BLOC_TEST_CONFIG`, `BLOC_COVERAGE`, `BLOC_SANITIZE`, `BLOC_LTO` are not defined; `CMAKE_C_FLAGS` and the consumer root directory's `COMPILE_OPTIONS`, `COMPILE_DEFINITIONS` and `INCLUDE_DIRECTORIES` are unchanged. After the build, the script checks that `ctest -N` lists exactly the smoke tests. (CM-01..05) |
+| FC-03 | `config-normal`, `config-cache` | The consumer sets `BLOC_CONFIG_HEADER=smoke_opts.h` and `BLOC_CONFIG_DIRS=${CMAKE_CURRENT_SOURCE_DIR}/config`, once as normal variables and once as cache variables, before `FetchContent_MakeAvailable`. Each variant is configured twice (fresh, then reconfigure) and must produce the same result: `smoke` passes, which by check 2 proves the library and consumer share the configuration, and `INTERFACE_COMPILE_DEFINITIONS` of `bloc` is exactly `BLOC_CONFIG_HEADER="smoke_opts.h"`. A third run with a relative `BLOC_CONFIG_DIRS` must fail to configure with the documented message. (CM-06) |
+| FC-04 | `mismatch` | Sensitivity of the ODR detector. A second executable `smoke_mismatch` is built from the same `main.c` against the default-configured library, but with `BLOC_CONFIG_HEADER` and the config include directory added only to the executable. It is registered with `WILL_FAIL TRUE`, so `ctest` passes only if check 2 detects the mismatch. |
+| FC-05 | `cstd` | The consumer sets `CMAKE_C_STANDARD` to 11, 17 and 23 (three configures); `main.c` builds warning-free with each, and `compile_commands.json` shows the `bloc` sources still compiled with `-std=c11`. (CM-07) |
+| FC-06 | `generators` | FC-01 with the `Ninja`, `Ninja Multi-Config` (building and testing both `Debug` and `Release`) and `Unix Makefiles` generators. (CM-08) |
+| FC-07 | `cmake-floor` | FC-01 and FC-03 (`config-normal`) with CMake 3.20 (installed with `pip install "cmake==3.20.*"` into a venv) in addition to the current CMake. Proves that `cmake_minimum_required(VERSION 3.20...4.2)` is honest and that the CMP0126 guard of section 3.8 works. |
+| FC-08 | `baremetal` | The smoke project is configured with `toolchain-cortex-m0plus.cmake` (`arm-none-eabi-gcc`, `CMAKE_SYSTEM_NAME Generic`, `CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY`, `-mcpu=cortex-m0plus -mthumb`) and `smoke` is linked with `--specs=nosys.specs -Wl,--gc-sections`. It is not run; `arm-none-eabi-nm` shows `bloc_pool_init` in the ELF. (CM-08) |
+| FC-09 | `online` | Without `FETCHCONTENT_SOURCE_DIR_BLOC`: the smoke project fetches `https://github.com/Andste82/bloc.git` at `BLOC_GIT_TAG=<commit sha>` (`BLOC_GIT_SHALLOW=FALSE`, because a shallow fetch cannot target a bare commit hash), then runs FC-01. CI runs it only on pushes to `master`, on tags and on the weekly schedule, because on pull requests from forks the commit is not in the repository yet. |
+| FC-10 | `docs` | The `bloc-fetchcontent` block in `README.md` (phase 7) and the one in `test/fetchcontent_smoke/CMakeLists.txt` are identical after replacing the two variables with the README's literal values. The script extracts both blocks between the `# >>> bloc-fetchcontent` and `# <<< bloc-fetchcontent` markers and diffs them, so the documented way to consume BLOC is the tested one. |
+
 ---
 
-## 10. Continuous integration (`.github/workflows/ci.yml`)
+## 10. Continuous integration (`.github/workflows/ci.yml`, `_target.yml`)
 
-Runner: `ubuntu-latest` with `container: ubuntu:26.04`, so compiler versions match the devcontainer and the footprint baseline (FP-04). Install the same apt packages as `.devcontainer/Dockerfile`: `build-essential`, `clang`, `cmake`, `ninja-build`, `gcovr`, `gcc-arm-none-eabi`, `libnewlib-arm-none-eabi`, `gcc-avr`, `binutils-avr`, `avr-libc`, `gcc-riscv64-unknown-elf`, `picolibc-riscv64-unknown-elf`. Jobs:
+Goal: many compilers, many architectures, many tests, on every pull request, without the pipeline becoming slow, flaky or a wall of copy-pasted YAML. The structure follows the CI of `sofa-buffers/corelib-c-cpp`, which solves the same problem for a portable C library. Appendix A gives skeletons of both workflow files.
 
-| Job | Matrix | Steps |
+### 10.1 Principles
+
+1. **Gate first.** One cheap job (`gate`) runs format check, NH-03 and one host build (library and all tests compiled, not run) before anything fans out. A broken build is then reported once, in about a minute, instead of by every matrix cell. Every other job has `needs: gate`.
+2. **One reusable workflow, one call site per tier.** `.github/workflows/_target.yml` (`on: workflow_call`) builds and tests one target, parameterized by inputs (container image, apt packages, target selector, compiler, configurations). `ci.yml` calls it from a `matrix:` per tier. Adding a compiler or architecture is one matrix entry, not a new workflow file. (`needs:` cannot cross workflow files, so only this structure makes the gate possible.)
+3. **Configurations are steps, not matrix cells.** The seven test configurations are seven steps in one job, so one toolchain installation serves all of them. Each step has `if: ${{ !cancelled() && steps.install.outcome == 'success' && <config selected> }}`, so one failing configuration does not hide the others, and each reports its own name, duration and log.
+4. **Every cell answers for itself.** `strategy.fail-fast: false` everywhere: the matrices cover genuinely different compilers and hardware.
+5. **Pinned environments.** Linux jobs run in `container: ubuntu:<version>`, so compiler versions are fixed by the image, not by GitHub's `ubuntu-latest`. The reference row and every footprint job use `ubuntu:26.04` (= devcontainer, FP-04 baseline).
+6. **Robust installs.** `scripts/ci/apt_install.sh` always adds `ca-certificates git`, sets `DEBIAN_FRONTEND=noninteractive`, uses `--no-install-recommends` and retries `apt-get update && apt-get install` three times with 15 s between attempts, printing `::warning::` per failed attempt and `::error::` at the end.
+7. **Bounded jobs.** Every job has `timeout-minutes`, about four times its observed duration (set initially to gate 10, host 25, emulated 30, bare-metal 20, others 20; adjust once in phase 6 from real timings, never above 45). A hung job must fail fast instead of holding one of the account's concurrent runner slots for GitHub's default of six hours.
+8. **Cancel superseded runs.** Top-level `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: ${{ github.ref != 'refs/heads/master' }} }`. Runs on `master` are never cancelled.
+9. **Least privilege.** Top-level `permissions: contents: read`.
+10. **One required check.** The final job `ci-ok` has `needs:` on every required job and `if: always()`, and fails if any of them failed or was cancelled. Branch protection requires only `ci-ok`. A job is *informational* while it is not listed in `ci-ok.needs`, and *required* once it is; the phases in section 12 say when each job joins.
+11. **Same scripts locally and in CI.** Workflows contain no build logic beyond calling `scripts/`. `scripts/run_all.sh` runs every tier whose tools are installed and prints `SKIP` for the rest.
+
+Triggers: `push` to `master` and tags `v*`, `pull_request` to `master`, `workflow_dispatch`, and a weekly `schedule` (catches drift in the container images and runs FC-09).
+
+### 10.2 Jobs
+
+| Job | Runs on | Matrix (one cell per entry) | Steps | Tests |
+| --- | --- | --- | --- | --- |
+| `gate` | `ubuntu:26.04` | – | clang-format check over `include/ src/ test/ examples/`; `check_no_heap.sh --grep-only`; `build_one.sh host default Debug --no-test` | NH-03, format |
+| `host` | `_target.yml` | gcc and clang × `ubuntu:26.04`, `ubuntu:24.04`, `ubuntu:22.04` (6 cells), plus gcc `-m32` on `ubuntu:26.04` | 7 configuration steps at Debug; optimized step: `default debug nochecks` × Release, MinSizeRel (`-m32`: `default` × Release); examples build | CC-01..04 |
+| `macos` | `macos-latest` | – | 7 configuration steps at Debug; `default` at Release; `fetchcontent_smoke.sh basic` | CC-05, FC-01 |
+| `emulated` | `_target.yml`, `ubuntu:26.04` | `aarch64`, `armhf`, `riscv64`, `powerpc`, `s390x` | 7 configuration steps at Debug (ctest under qemu); optimized step: `default nochecks` × MinSizeRel; symbol check | EM-01..04 |
+| `baremetal` | `_target.yml`, `ubuntu:26.04` | families `arm-gcc`, `clang` (thumbv6m, thumbv7m, rv32imac), `riscv-gcc`, `avr-gcc` | 6 configuration steps (`build_one.sh family:<f> <cfg>`: compile, symbols, static layout check, expected failures such as AVR `wide`); footprint step (`check_size.sh --family <f>`, summary + artifact) | XC-01..05, FP-01..05 |
+| `coverage` | `ubuntu:26.04` | – | one step per coverage-gated configuration: `scripts/coverage.sh <cfg>`; upload HTML reports | Q-01 |
+| `sanitize` | `ubuntu:26.04` | gcc, clang | one step per coverage-gated configuration with ASan+UBSan; clang cell adds the TSan `pthread` step | SAN-01..03 |
+| `lto` | `ubuntu:26.04` | gcc, clang | steps `default`, `debug`, `nochecks` with `BLOC_LTO=ON` | LTO-01..02 |
+| `no-heap` | `ubuntu:26.04` | – | `scripts/check_no_heap.sh` | NH-01..02 |
+| `fetchcontent` | `ubuntu:26.04` | – | one step per offline variant of `fetchcontent_smoke.sh` | FC-01..08, FC-10 |
+| `fetchcontent-online` | `ubuntu:26.04` | – | only for `push` and `schedule`: `fetchcontent_smoke.sh online` with the commit SHA | FC-09 |
+| `ci-ok` | `ubuntu-latest` | – | fails if any needed job failed or was cancelled | – |
+
+That is about 25 jobs per run, running about 250 configuration builds and test runs. GCC coverage, sanitizers, LTO and the footprint baseline run only on the reference image, so their results do not depend on which older compiler happens to be installed.
+
+### 10.3 Reusable workflow `_target.yml`
+
+Inputs:
+
+| Input | Type | Meaning |
 | --- | --- | --- |
-| `build-test` | compiler {gcc, clang} × config {all 7}, plus {default, debug, nochecks} at Release and MinSizeRel | configure, build, `ctest` (CC-01, CC-03) |
-| `coverage` | config {6 coverage-gated} | `scripts/coverage.sh <cfg>`; upload `coverage.html` as artifact |
-| `sanitize` | – | `scripts/sanitize.sh` (SAN-01..03) |
-| `no-heap` | – | `scripts/check_no_heap.sh` (NH-01..03) |
-| `cross` | – | `scripts/cross_check.sh` (XC-01..05) |
-| `size` | – | `scripts/check_size.sh` (FP-01..05); upload `build/size/report.md` as artifact |
-| `format` | – | `clang-format --dry-run --Werror` over `include/ src/ test/ examples/` |
+| `name` | string | Display name, e.g. `gcc 11 (ubuntu 22.04)` or `s390x (qemu, big-endian)` |
+| `container` | string | Image, e.g. `ubuntu:26.04` |
+| `packages` | string | apt packages for `apt_install.sh` |
+| `selector` | string | Target name or `family:<name>` from `scripts/ci/target_table.sh` |
+| `cc` | string | Optional compiler override for host targets (`gcc`, `clang`); empty = table default |
+| `configs` | string | Space-separated configurations to run at Debug; default: all seven |
+| `optconfigs` | string | Space-separated configurations for the optimized step; empty = skip |
+| `optbuildtypes` | string | Build types for the optimized step; default `Release MinSizeRel` |
+| `symbols` | boolean | Run the symbol check `check_no_heap.sh --target <selector>` (EM-03) |
+| `size` | boolean | Run the footprint step (bare-metal families) |
+| `timeout-minutes` | number | Default 25 |
 
-All jobs are required. `scripts/run_all.sh` runs the same steps locally.
+Steps: checkout → `apt_install.sh` (`id: install`) → `build_one.sh --versions <selector>` (prints every compiler and tool version) → seven configuration steps → optimized step (loops over `optbuildtypes` × `optconfigs`, continues after a failure and exits non-zero at the end) → symbol step when `symbols` is true → footprint step and artifact upload when `size` is true. A configuration step is selected with `contains(format(' {0} ', inputs.configs), ' <cfg> ')`, so `wide` cannot match inside another name.
+
+### 10.4 Scripts behind the workflows
+
+- `scripts/ci/target_table.sh` is the single source of truth for targets. `bloc_target <name>` sets `BLOC_KIND` (`host`, `emulated`, `baremetal`), `CC`, target flags, `BLOC_TOOLCHAIN_FILE`, `NM`, `SIZE`, `BLOC_EMULATOR`, the applicable configurations, expected failures (`avr-gcc:wide` → `BLOC_SIZE_T must not be wider than size_t`), `BLOC_EXPECT_BIG_ENDIAN` and `BLOC_EXPECT_PTR_BITS`. `bloc_family <name>` lists the targets of a family. Host targets are `host` (honours `CC`, default `gcc`, so CI selects the compiler per cell), `host-gcc-m32` and `host-appleclang`; the tier-1E targets are `aarch64`, `armhf`, `riscv64`, `powerpc`, `s390x`; bare-metal targets are named `<core>-<compiler>` (e.g. `cm0plus-gcc`, `rv32i-gcc`, `atmega328p-gcc`) and grouped into the families `arm-gcc`, `clang`, `riscv-gcc`, `avr-gcc`. Every other script reads targets only from here; there is no second list.
+- `scripts/ci/build_one.sh <selector> <config> [Debug|Release|MinSizeRel] [--no-test] [--lto]` builds one combination. For `host` and `emulated` targets it configures CMake (`-G Ninja`, `CMAKE_BUILD_TYPE`, `BLOC_TEST_CONFIG`, toolchain file, `BLOC_EXPECT_*`) into `build/ci/<target>/<config>-<type>`, builds and runs `ctest --output-on-failure` (through the toolchain's emulator for tier 1E). For `baremetal` targets it runs the XC-01/02/05 checks for that configuration, or checks the expected failure message. A `family:` selector loops over the family's targets, continues after failures and exits non-zero if any failed. Every combination prints one line `PASS|FAIL|SKIP <target> <config> <type>`.
+- `scripts/cross_check.sh`, `scripts/check_size.sh`, `scripts/coverage.sh`, `scripts/sanitize.sh`, `scripts/fetchcontent_smoke.sh` and `scripts/run_all.sh` are thin loops over these two scripts and the tools of section 9.
+- All scripts use `#!/usr/bin/env bash` and `set -euo pipefail`, pass `shellcheck`, and work from any working directory (they `cd` to the repository root).
 
 ---
 
@@ -846,10 +1088,10 @@ All jobs are required. `scripts/run_all.sh` runs the same steps locally.
 | Spec section | Tests |
 | --- | --- |
 | 2 No-heap, dependencies | NH-01..03, XC-01..03 |
-| 3 Layout, alignment | CFG-03..05, CFG-09, ALLOC-02, ALLOC-15, XC-05 |
-| 4 Pool size, storage | CFG-01, CFG-02, CFG-07, CFG-09, POOL-06..10 |
+| 3 Layout, alignment | CFG-03..05, CFG-09, ALLOC-02, ALLOC-15, XC-05, CC-02, EM-01, EM-04 |
+| 4 Pool size, storage | CFG-01, CFG-02, CFG-07, CFG-09, POOL-06..10, LTO-01 (storage aliasing) |
 | 5 Handle, data model | CFG-05, CFG-10, ACC-01 |
-| 6 Configuration | CFG-06, CFG-08, CF-01..10, XC-04 |
+| 6 Configuration | CFG-06, CFG-08, CF-01..10, XC-04, FC-03, FC-04, LTO-02 |
 | 7 Pool lifecycle | POOL-01..23, XC-02 (no division in init) |
 | 8 Allocation | ALLOC-01..17 |
 | 9 Reference counting, sharing | REF-01..11, DBG-09, LEN-08 |
@@ -860,24 +1102,28 @@ All jobs are required. `scripts/run_all.sh` runs the same steps locally.
 | 14 Invariants | MODEL-01..02, ALLOC-17, DBG-10 |
 | 15 API | CFG-10, CFG-11, CF-10 |
 | 17 Code size | FP-01..06, XC-02, CC-03 |
+| – (plan R-10, section 3.8: CMake, consumption) | CM-01..10 via FC-01..10 |
+| – (plan Q-08: compilers and architectures) | CC-01..05, EM-01..04, XC-01..05 |
 
 ---
 
 ## 12. Phases
 
-Each phase implements code **and** all tests for that code, including the DBG and TS aspects of the functions it adds. The DoD of every phase from phase 2 on includes: zero warnings with every compiler of section 3.6, all tests passing in all seven configurations with GCC and Clang, `scripts/cross_check.sh` green, `scripts/check_size.sh` report generated (informational until phase 4), `scripts/coverage.sh` at 100 % for all code that exists so far in all six coverage configurations, guard bands and lock balance clean. Debug paths are not deferred: a function is only done when its debug branches are covered too.
+Each phase implements code **and** all tests for that code, including the DBG and TS aspects of the functions it adds. The DoD of every phase from phase 2 on includes: zero warnings with every compiler of section 3.6, all tests passing in all seven configurations with GCC and Clang and on every tier-1E emulated target, the FetchContent variants scheduled so far green, `scripts/cross_check.sh` green, `scripts/check_size.sh` report generated (informational until phase 4), `scripts/coverage.sh` at 100 % for all code that exists so far in all six coverage configurations, guard bands and lock balance clean. Debug paths are not deferred: a function is only done when its debug branches are covered too.
 
 ### Phase 0 — Scaffolding
 
 Work:
-- Directory layout (section 2), top-level and test `CMakeLists.txt`, `CMakePresets.json` with the presets of section 3.2 for GCC and Clang and all seven configurations.
-- Unity via `FetchContent` (v2.6.1).
+- Directory layout (section 2), top-level and test `CMakeLists.txt`, `CMakePresets.json` with the presets of section 3.2 for GCC and Clang and all seven configurations. The top-level `CMakeLists.txt` follows section 3.8 from the first commit (top-level detection, options, PUBLIC/PRIVATE split, config-header mechanism); `BLOC_TEST_CONFIG` is implemented through `BLOC_CONFIG_HEADER`/`BLOC_CONFIG_DIRS`.
+- Unity via `FetchContent` (v2.6.1), inside `test/CMakeLists.txt` only.
+- `cmake/toolchains/linux-<arch>.cmake` for the five tier-1E targets; `scripts/ci/target_table.sh`, `scripts/ci/build_one.sh`, `scripts/ci/apt_install.sh` (section 10.4); `test/test_platform.c` (EM-04).
+- `test/fetchcontent_smoke/` with the full `CMakeLists.txt` (FetchContent block and FC-02 assertions), `config/smoke_opts.h`, the bare-metal toolchain file, and a `main.c` that for now only uses compile-time macros (e.g. `_Static_assert(BLOC_POOL_SIZE(4, 64) > 0, "")`) and returns 0; `scripts/fetchcontent_smoke.sh` with all variants.
 - Test support library (section 5) complete, with its own self-tests (`test_support.c`: guard band detection, assertion bookkeeping, lock tracer errors).
 - All seven `test/configs/cfg_*.h`.
 - Stub `include/bloc.h`, `include/bloc_opt.h` and `src/bloc.c`. An empty translation unit is not valid ISO C under `-Wpedantic`, so the stub `bloc.c` contains one internal declaration, e.g. `typedef int bloc_i_translation_unit_not_empty;`.
-- `scripts/*.sh` skeletons, including `cross_check.sh` (compiler detection and the target table of section 3.6) and `check_size.sh` (report only). Also `.clang-format` and the CI workflow with the jobs of section 10, running in the `ubuntu:26.04` container. The coverage, no-heap and cross jobs are informational until phase 2, the size job until phase 6.
+- `scripts/*.sh` skeletons, including `cross_check.sh` (loop over the bare-metal targets of `target_table.sh`) and `check_size.sh` (report only). Also `.clang-format` and both workflow files (`ci.yml`, `_target.yml`) with every job of section 10.2 and Appendix A. Initially `ci-ok.needs` lists `gate`, `host`, `macos`, `emulated` and `fetchcontent`. `coverage`, `no-heap` and `baremetal` join in phase 2; `sanitize` and `lto` in phase 5; `fetchcontent-online` in phase 6. Until then these jobs run but are informational (section 10.1, item 10). The footprint step is informational until phase 4.
 
-DoD: `ctest` runs `test_support` green in all configurations with GCC and Clang; `cross_check.sh` compiles the stub `bloc.c` for every tier-2 target; CI pipeline runs.
+DoD: `ctest` runs `test_support` green in all configurations with GCC and Clang, on the 32-bit host and on every tier-1E target (EM-04 passes, so each emulated job runs the right architecture); `cross_check.sh` compiles the stub `bloc.c` for every tier-2 target; FC-02, FC-06, FC-07 and FC-08 pass with the macro-only `main.c`; the CI pipeline runs end to end, and `ci-ok` is green.
 
 Commit: `phase 0: project scaffolding, test support and CI`
 
@@ -897,7 +1143,7 @@ These functions depend on each other for full branch coverage (e.g. `BLOC_BUSY` 
 
 Work: internal macros and helpers (sections 4.3, 4.4); `bloc_pool_init`, `bloc_pool_deinit`, `bloc_pool_free_count`, `bloc_pool_get_stats`, `bloc_alloc`, `bloc_calloc`, `bloc_data`, `bloc_len`, `bloc_headroom`, `bloc_tailroom`, `bloc_retain`, `bloc_release`. Suggested order inside the phase: pool lifecycle → alloc → accessors → retain/release → calloc.
 
-Tests: POOL-01..23, ALLOC-01..17, ACC-01 (alloc part), ACC-02..04, REF-01..11; DBG-01..07 and DBG-10 rows for these functions; TS-01 rows for these functions.
+Tests: POOL-01..23, ALLOC-01..17, ACC-01 (alloc part), ACC-02..04, REF-01..11; DBG-01..07 and DBG-10 rows for these functions; TS-01 rows for these functions. Smoke `main.c` gains checks 1, 2, 4 and 5 of section 9.8: FC-01, FC-03, FC-04 and FC-05 pass. `coverage`, `no-heap` and `baremetal` join `ci-ok`.
 
 Commit: `phase 2: pool lifecycle, allocation, accessors, retain and release`
 
@@ -913,7 +1159,7 @@ Commit: `phase 3: set_len, add_header, remove_header`
 
 Work: `bloc_copy_from`, `bloc_copy_to`, `bloc_copy`, `bloc_append`, `bloc_append_data`, `bloc_prepend`, `bloc_prepend_data`.
 
-Tests: CPY-01..12, APP-01..07, PRE-01..09, ACC-01 completion; DBG-01..06, DBG-08 and DBG-09 rows for these functions; TS-01 rows. With the API complete: FP-01..03 and FP-05.
+Tests: CPY-01..12, APP-01..07, PRE-01..09, ACC-01 completion; DBG-01..06, DBG-08 and DBG-09 rows for these functions; TS-01 rows. With the API complete: FP-01..03 and FP-05. Smoke `main.c` gains check 3 of section 9.8 (append, add_header, copy_to).
 
 Additional DoD: the spec budgets (FP-02) are met. A size-reduction pass is done (section 4.6), comparing per-function sizes on ARMv6-M and ARMv7-M, before `scripts/size_baseline.txt` is created from the measured values. If a budget cannot be met without violating another rule, record it in `docs/OPEN_QUESTIONS.md` (section 1.3) instead of committing.
 
@@ -923,15 +1169,15 @@ Commit: `phase 4: copy, append and prepend`
 
 Work: no new API. Complete the cross-cutting tests and fix any gaps they reveal; implement the reference model and the pthread stress test.
 
-Tests: DBG-11..13, TS-02..04, MODEL-01..02.
+Tests: DBG-11..13, TS-02..04, MODEL-01..02; LTO-01..02. `sanitize` and `lto` join `ci-ok`.
 
 Commit: `phase 5: cross-cutting debug, thread-safety and model-based tests`
 
 ### Phase 6 — Hardening and enforced gates
 
-Work: `scripts/sanitize.sh`, `scripts/check_no_heap.sh`, the `-O2`/`-Os` host builds (CC-03), the FP-04 baseline gate; make the CI `coverage`, `sanitize`, `no-heap`, `cross` and `size` jobs required and blocking. Confirm Q-02: `grep -rnE "LCOV_EXCL|GCOVR_EXCL" src include test` returns nothing.
+Work: complete `scripts/sanitize.sh` and `scripts/check_no_heap.sh`, the `-O2`/`-Os` host builds (CC-03), the FP-04 baseline gate, and the EM-03 symbol check. Add `fetchcontent-online` to `ci-ok.needs`; every job of section 10.2 is now required. Adjust every `timeout-minutes` to about four times the observed duration. Enable branch protection on `master` with `ci-ok` as the only required check (the repository owner does this; note it in the commit message). Confirm Q-02: `grep -rnE "LCOV_EXCL|GCOVR_EXCL" src include test` returns nothing.
 
-Tests: SAN-01..03, NH-01..03, CC-01..03, XC-01..05, FP-01..06.
+Tests: SAN-01..03, NH-01..03, CC-01..05, XC-01..05, FP-01..06, EM-01..04, FC-01..09.
 
 DoD: the full CI pipeline is green with all gates blocking.
 
@@ -940,7 +1186,8 @@ Commit: `phase 6: sanitizers, no-heap, cross-compiler and footprint gates`
 ### Phase 7 — Documentation and examples
 
 Work:
-- `README.md`: purpose, feature list, the no-heap guarantee, supported compilers and targets (section 3.6), a footprint table from `build/size/report.md`, quick start (pool storage, init, alloc with headroom, append, add_header, release), configuration table (link to spec section 6), how to build and run tests, coverage and sanitizer scripts, license.
+- `README.md`: purpose, feature list, the no-heap guarantee, supported compilers and targets (section 3.6), a footprint table from `build/size/report.md`, quick start (pool storage, init, alloc with headroom, append, add_header, release), **"Using BLOC in your CMake project"** with the `bloc-fetchcontent` block of section 3.8, the `BLOC_CONFIG_HEADER`/`BLOC_CONFIG_DIRS` options and the warning of CM-06 (never set the config header on your own target only), configuration table (link to spec section 6), how to build and run tests, coverage and sanitizer scripts, a CI badge, license.
+- FC-10 enabled in `fetchcontent_smoke.sh` and in the `fetchcontent` job.
 - `examples/basic.c` and `examples/bloc_opts_example.h`, built in CI with the `default` configuration.
 - Doxygen comments complete for every public symbol.
 
@@ -958,6 +1205,340 @@ Commit: `phase 7: README, examples and API documentation`
 - [ ] Footprint within the spec section 17 budgets on ARMv6-M and ARMv7-M; FP-01..06 green; `scripts/size_baseline.txt` committed.
 - [ ] ASan/UBSan and TSan runs clean.
 - [ ] No-heap check NH-01..03 green; the library references only `memcpy` and `memset`.
-- [ ] CI pipeline green on the default branch.
+- [ ] All tier-1 host compilers (CC-01..05) and tier-1E emulated targets (EM-01..04) green; LTO-01..02 green.
+- [ ] CMake rules CM-01..10 implemented; FetchContent smoke tests FC-01..10 green, including the CMake 3.20 floor and the bare-metal consumer.
+- [ ] CI pipeline (section 10) green on `master`, with `ci-ok` as the required check and every job listed in it.
 - [ ] `docs/OPEN_QUESTIONS.md` either absent or every entry has a chosen interpretation and linked tests.
 - [ ] README and examples complete.
+
+---
+
+## Appendix A — CI workflow skeletons
+
+These skeletons fix the structure of section 10; they are not complete. Lines marked `# ...` stand for the repetitive steps that section 10 describes. They parse as YAML. `ci-ok.needs` shows the final state after phase 6 (section 12 says when each job joins). Before relying on them, the implementer checks the action major versions (`actions/checkout`, `actions/upload-artifact`) against their current releases and the package names against the images, and runs the workflow once with `workflow_dispatch`.
+
+### A.1 `.github/workflows/ci.yml`
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: '17 3 * * 1'        # weekly: image drift, FC-09
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/ci/apt_install.sh build-essential cmake ninja-build clang-format
+      - name: format
+        run: find include src test examples -name '*.[ch]' -print0 | xargs -0 clang-format --dry-run --Werror
+      - name: no-heap grep (NH-03)
+        run: scripts/check_no_heap.sh --grep-only
+      - name: build default (tests compiled, not run)
+        run: scripts/ci/build_one.sh host default Debug --no-test
+
+  host:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'gcc 15 (ubuntu 26.04)',   container: 'ubuntu:26.04', cc: gcc,   packages: 'build-essential cmake ninja-build' }
+          - { name: 'clang 21 (ubuntu 26.04)', container: 'ubuntu:26.04', cc: clang, packages: 'clang lld cmake ninja-build' }
+          - { name: 'gcc 13 (ubuntu 24.04)',   container: 'ubuntu:24.04', cc: gcc,   packages: 'build-essential cmake ninja-build' }
+          - { name: 'clang 18 (ubuntu 24.04)', container: 'ubuntu:24.04', cc: clang, packages: 'clang lld cmake ninja-build' }
+          - { name: 'gcc 11 (ubuntu 22.04)',   container: 'ubuntu:22.04', cc: gcc,   packages: 'build-essential cmake ninja-build' }
+          - { name: 'clang 14 (ubuntu 22.04)', container: 'ubuntu:22.04', cc: clang, packages: 'clang lld cmake ninja-build' }
+          - { name: 'gcc 15 -m32 (ubuntu 26.04)', container: 'ubuntu:26.04', selector: host-gcc-m32,
+              packages: 'build-essential gcc-multilib cmake ninja-build', optconfigs: 'default', optbuildtypes: 'Release' }
+    uses: ./.github/workflows/_target.yml
+    with:
+      name: ${{ matrix.name }}
+      container: ${{ matrix.container }}
+      packages: ${{ matrix.packages }}
+      selector: ${{ matrix.selector || 'host' }}
+      cc: ${{ matrix.cc || '' }}
+      optconfigs: ${{ matrix.optconfigs || 'default debug nochecks' }}
+      optbuildtypes: ${{ matrix.optbuildtypes || 'Release MinSizeRel' }}
+
+  macos:
+    needs: gate
+    runs-on: macos-latest          # AppleClang, arm64; cmake and ninja are preinstalled
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - { name: default,  if: "${{ !cancelled() }}", run: scripts/ci/build_one.sh host-appleclang default Debug }
+      - { name: debug,    if: "${{ !cancelled() }}", run: scripts/ci/build_one.sh host-appleclang debug Debug }
+      # ... nochecks, wide, noalign, bigalign, pthread ...
+      - { name: default (Release), if: "${{ !cancelled() }}", run: scripts/ci/build_one.sh host-appleclang default Release }
+      - { name: FetchContent (FC-01), if: "${{ !cancelled() }}", run: scripts/fetchcontent_smoke.sh basic }
+
+  emulated:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'aarch64 (qemu)',               selector: aarch64, packages: 'gcc-aarch64-linux-gnu' }
+          - { name: 'armhf (qemu)',                 selector: armhf,   packages: 'gcc-arm-linux-gnueabihf' }
+          - { name: 'riscv64 (qemu)',               selector: riscv64, packages: 'gcc-riscv64-linux-gnu' }
+          - { name: 'powerpc (qemu, big-endian)',   selector: powerpc, packages: 'gcc-powerpc-linux-gnu' }
+          - { name: 's390x (qemu, big-endian)',     selector: s390x,   packages: 'gcc-s390x-linux-gnu' }
+    uses: ./.github/workflows/_target.yml
+    with:
+      name: ${{ matrix.name }}
+      container: 'ubuntu:26.04'
+      packages: ${{ matrix.packages }} qemu-user-static cmake ninja-build
+      selector: ${{ matrix.selector }}
+      optconfigs: 'default nochecks'
+      optbuildtypes: 'MinSizeRel'
+      symbols: true
+      timeout-minutes: 30
+
+  baremetal:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'arm-none-eabi-gcc', family: arm-gcc,
+              packages: 'gcc-arm-none-eabi libnewlib-arm-none-eabi binutils-arm-none-eabi' }
+          - { name: 'clang (thumbv6m, thumbv7m, rv32imac)', family: clang,
+              packages: 'clang lld llvm libnewlib-arm-none-eabi picolibc-riscv64-unknown-elf' }
+          - { name: 'riscv64-unknown-elf-gcc', family: riscv-gcc,
+              packages: 'gcc-riscv64-unknown-elf picolibc-riscv64-unknown-elf' }
+          - { name: 'avr-gcc', family: avr-gcc,
+              packages: 'gcc-avr binutils-avr avr-libc' }
+    uses: ./.github/workflows/_target.yml
+    with:
+      name: ${{ matrix.name }}
+      container: 'ubuntu:26.04'
+      packages: ${{ matrix.packages }}
+      selector: family:${{ matrix.family }}
+      configs: 'default debug nochecks wide noalign bigalign'
+      optconfigs: ''
+      size: true
+      timeout-minutes: 20
+
+  coverage:
+    needs: gate
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - id: install
+        run: scripts/ci/apt_install.sh build-essential cmake ninja-build gcovr
+      - { name: default,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh default }
+      - { name: debug,    if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh debug }
+      - { name: nochecks, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh nochecks }
+      - { name: wide,     if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh wide }
+      - { name: noalign,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh noalign }
+      - { name: bigalign, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh bigalign }
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with: { name: coverage-html, path: build/coverage/ }
+
+  sanitize:
+    needs: gate
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: install
+        run: scripts/ci/apt_install.sh build-essential clang cmake ninja-build
+      # one step per coverage-gated configuration, as in `coverage`:
+      - name: default
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: scripts/sanitize.sh --cc "$CC" default
+      # ... debug, nochecks, wide, noalign, bigalign ...
+      - name: pthread (TSan)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && matrix.cc == 'clang' }}
+        run: scripts/sanitize.sh --cc clang --tsan pthread
+
+  lto:
+    needs: gate
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: install
+        run: scripts/ci/apt_install.sh build-essential clang lld llvm cmake ninja-build
+      - { name: default,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/ci/build_one.sh host default Release --lto }
+      - { name: debug,    if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/ci/build_one.sh host debug Release --lto }
+      - { name: nochecks, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/ci/build_one.sh host nochecks Release --lto }
+
+  no-heap:
+    needs: gate
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/ci/apt_install.sh build-essential clang cmake ninja-build
+      - run: scripts/check_no_heap.sh
+
+  fetchcontent:
+    needs: gate
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - id: install
+        run: >-
+          scripts/ci/apt_install.sh build-essential cmake ninja-build make python3-venv
+          gcc-arm-none-eabi libnewlib-arm-none-eabi
+      - { name: basic,         if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh basic }
+      - { name: config-normal, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh config-normal }
+      - { name: config-cache,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh config-cache }
+      - { name: mismatch,      if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh mismatch }
+      - { name: cstd,          if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh cstd }
+      - { name: generators,    if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh generators }
+      - { name: cmake-floor,   if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh cmake-floor }
+      - { name: baremetal,     if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh baremetal }
+      - { name: docs,          if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh docs }   # from phase 7
+
+  fetchcontent-online:
+    needs: gate
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/ci/apt_install.sh build-essential cmake ninja-build
+      - run: scripts/fetchcontent_smoke.sh online
+        env:
+          BLOC_GIT_TAG: ${{ github.sha }}
+
+  ci-ok:
+    if: always()
+    needs: [gate, host, macos, emulated, baremetal, coverage, sanitize, lto, no-heap, fetchcontent, fetchcontent-online]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: every required job succeeded
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
+      - run: echo "all required jobs passed (skipped jobs are allowed, e.g. fetchcontent-online on pull requests)"
+```
+
+### A.2 `.github/workflows/_target.yml`
+
+```yaml
+name: target
+
+on:
+  workflow_call:
+    inputs:
+      name:          { type: string,  required: true }
+      container:     { type: string,  required: true }
+      packages:      { type: string,  required: true }
+      selector:      { type: string,  required: true }
+      cc:            { type: string,  default: '' }
+      configs:       { type: string,  default: 'default debug nochecks wide noalign bigalign pthread' }
+      optconfigs:    { type: string,  default: '' }
+      optbuildtypes: { type: string,  default: 'Release MinSizeRel' }
+      symbols:       { type: boolean, default: false }
+      size:          { type: boolean, default: false }
+      timeout-minutes: { type: number, default: 25 }
+
+jobs:
+  build:
+    name: ${{ inputs.name }}
+    runs-on: ubuntu-latest
+    container: ${{ inputs.container }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    env:
+      SEL: ${{ inputs.selector }}
+      CC: ${{ inputs.cc }}
+      CONFIGS: ' ${{ inputs.configs }} '
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install toolchain
+        id: install
+        run: scripts/ci/apt_install.sh ${{ inputs.packages }}
+      - name: Toolchain versions
+        run: scripts/ci/build_one.sh --versions "$SEL"
+
+      # Configurations are steps, not matrix cells: one install serves all of them,
+      # and a failing configuration does not hide the others.
+      - name: default
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' default ') }}
+        run: scripts/ci/build_one.sh "$SEL" default Debug
+      - name: debug
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' debug ') }}
+        run: scripts/ci/build_one.sh "$SEL" debug Debug
+      - name: nochecks
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' nochecks ') }}
+        run: scripts/ci/build_one.sh "$SEL" nochecks Debug
+      - name: wide
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' wide ') }}
+        run: scripts/ci/build_one.sh "$SEL" wide Debug
+      - name: noalign
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' noalign ') }}
+        run: scripts/ci/build_one.sh "$SEL" noalign Debug
+      - name: bigalign
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' bigalign ') }}
+        run: scripts/ci/build_one.sh "$SEL" bigalign Debug
+      - name: pthread
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && contains(format(' {0} ', inputs.configs), ' pthread ') }}
+        run: scripts/ci/build_one.sh "$SEL" pthread Debug
+
+      - name: optimized (${{ inputs.optbuildtypes }})
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.optconfigs != '' }}
+        run: |
+          rc=0
+          for bt in ${{ inputs.optbuildtypes }}; do
+            for cfg in ${{ inputs.optconfigs }}; do
+              scripts/ci/build_one.sh "$SEL" "$cfg" "$bt" || rc=1
+            done
+          done
+          exit "$rc"
+
+      - name: symbols (EM-03)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.symbols }}
+        run: scripts/check_no_heap.sh --target "$SEL"
+
+      - name: footprint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.size }}
+        run: scripts/check_size.sh --family "${SEL#family:}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: upload footprint report
+        if: ${{ !cancelled() && inputs.size }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: size-${{ inputs.name }}
+          path: build/size/
+```
