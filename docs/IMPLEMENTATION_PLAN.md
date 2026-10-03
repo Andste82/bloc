@@ -46,7 +46,7 @@ This plan tells an implementing agent exactly what to build, in which order, and
 | Q-05 | All tests pass under AddressSanitizer + UndefinedBehaviorSanitizer with both GCC and Clang, and the thread stress test passes under ThreadSanitizer. |
 | Q-06 | Tests never hard-code layout numbers (4, 12, 16 …). They derive expected values from the public macros and the formulas in the spec, so the same test is valid in every configuration. |
 | Q-07 | The footprint gates of section 9.5 pass: spec budgets are met, and the regression baseline (`scripts/size_baseline.txt`) never grows without a justified update in the same commit. |
-| Q-08 | Many compilers, many architectures, many tests: the full unit test suite runs and passes on every tier-1 host compiler (oldest supported, middle and newest GCC and Clang, AppleClang) and on every tier-1E emulated target (32- and 64-bit, little- and big-endian) of section 3.6, not only on the developer's machine. |
+| Q-08 | Many compilers, many architectures, many tests: the full unit test suite runs and passes on every tier-1 host compiler (oldest supported, middle and newest GCC and Clang) and on every tier-1E emulated target (32- and 64-bit, little- and big-endian) of section 3.6, not only on the developer's machine. Priorities, highest first: bare-metal embedded targets (tier 2), little- and big-endian targets with real test execution (tier 1E), Linux hosts (tier 1). macOS and Windows are non-goals (section 3.6). |
 | Q-09 | The `FetchContent` smoke tests of section 9.8 pass. A change that breaks consumption by another CMake project is a defect even if all unit tests pass. |
 
 ### 1.3 Handling ambiguity
@@ -133,11 +133,11 @@ bloc/
 | Unity | v2.6.1 (tag), fetched with CMake `FetchContent` | Unit test framework |
 | binutils `nm`, `size` (host and `<triple>-` prefixed) | any | Symbol and footprint checks |
 | Linux cross GCCs: `gcc-aarch64-linux-gnu`, `gcc-arm-linux-gnueabihf`, `gcc-riscv64-linux-gnu`, `gcc-powerpc-linux-gnu`, `gcc-s390x-linux-gnu` | distro default | Tier-1E emulated targets (section 3.6) |
-| `qemu-user-static` | distro default | Runs the tier-1E test binaries (user-mode emulation) |
-| `gcc-multilib` | distro default | 32-bit host build (CC-02) |
+| `qemu-user` | distro default (Ubuntu 26.04 has no `qemu-user-static`; `qemu-user` ships statically linked binaries) | Runs the tier-1E test binaries (user-mode emulation) |
+| `gcc-multilib` | distro default | 32-bit host build (CC-02). Conflicts with every Linux cross GCC (checked on Ubuntu 26.04), so it is installed only in the CI `host -m32` cell, never in the devcontainer. |
 | Python `venv` + `pip install cmake==3.20.*` | – | CMake floor check (FC-07), CI only |
 
-The devcontainer (`.devcontainer/Dockerfile`, Ubuntu 26.04) is the reference environment. Footprint baselines are only valid for the compiler versions recorded in them (section 9.5). Bare-metal cross targets (tier 2) are compile-, link- and symbol-checked but do not run tests. The tier-1E emulated targets do run the full test suite; their packages (Linux cross GCCs, `qemu-user-static`, `gcc-multilib`) are installed in CI and should be added to the devcontainer. Where they are missing locally, `scripts/run_all.sh` prints a visible `SKIP` line for each affected target instead of failing.
+The devcontainer (`.devcontainer/Dockerfile`, Ubuntu 26.04) is the reference environment. Footprint baselines are only valid for the compiler versions recorded in them (section 9.5). Bare-metal cross targets (tier 2) are compile-, link- and symbol-checked but do not run tests. The tier-1E emulated targets do run the full test suite; their packages (Linux cross GCCs with their `libc6-dev-<arch>-cross`, and `qemu-user`) are installed in the devcontainer and in CI. `gcc-multilib` cannot be co-installed with the cross GCCs, so CC-02 runs in CI only. Where a tool is missing locally, `scripts/run_all.sh` prints a visible `SKIP` line for each affected target instead of failing.
 
 Unity is fetched at configure time:
 
@@ -222,17 +222,18 @@ Some targets in the matrix differ from a 64-bit host, and the code must be corre
 | 1 Host (reference) | GCC 15, Clang 21 (`ubuntu:26.04`, = devcontainer) | native x86-64 | Full build, all unit tests, compile-fail tests, in all 7 configurations at Debug, plus Release/MinSizeRel (CC-01, CC-03); sanitizers; GCC coverage; LTO (LTO-01); no-heap; FetchContent smoke |
 | 1 Host (older) | GCC 13, Clang 18 (`ubuntu:24.04`); GCC 11, Clang 14 (`ubuntu:22.04`, oldest supported) | native x86-64 | Same build and test scope as the reference row, no coverage or sanitizers (CC-04) |
 | 1 Host (32-bit) | GCC 15 with `-m32` (`gcc-multilib`) | i386 | All 7 configurations at Debug, `default` at Release (CC-02) |
-| 1 Host (macOS) | AppleClang (`macos-latest`) | native arm64, Mach-O | All 7 configurations at Debug, `default` at Release; FetchContent smoke FC-01 (CC-05) |
-| 1E Emulated | Linux cross GCC, static linking, tests run under `qemu-<arch>-static` (user mode) | `aarch64` (64-bit LE); `armhf` (`arm-linux-gnueabihf`, ARMv7 32-bit LE); `riscv64` (64-bit LE); `powerpc` (32-bit **big-endian**); `s390x` (64-bit **big-endian**) | All unit tests in all 7 configurations at Debug, `default` and `nochecks` at MinSizeRel; symbol check (EM-01..04) |
+| 1E Emulated | Linux cross GCC, static linking, tests run under `qemu-<arch>` (user mode) | `aarch64` (64-bit LE); `armhf` (`arm-linux-gnueabihf`, ARMv7 32-bit LE); `riscv64` (64-bit LE); `powerpc` (32-bit **big-endian**); `s390x` (64-bit **big-endian**) | All unit tests in all 7 configurations at Debug, `default` and `nochecks` at MinSizeRel; symbol check (EM-01..04) |
 | 2 Cross | `arm-none-eabi-gcc` | ARMv6-M `-mcpu=cortex-m0plus -mthumb`; ARMv7-M `-mcpu=cortex-m3 -mthumb`; ARMv7E-M `-mcpu=cortex-m4 -mthumb -mfloat-abi=soft`; ARMv7-A `-mcpu=cortex-a7 -mthumb -mfloat-abi=soft`; ARMv7-R `-mcpu=cortex-r5 -mthumb -mfloat-abi=soft` | Library compile, static layout checks, symbol check, footprint, dead-strip link |
 | 2 Cross | Clang | `--target=thumbv6m-none-eabi -mcpu=cortex-m0plus`; `--target=thumbv7m-none-eabi -mcpu=cortex-m3`; `--target=riscv32-unknown-elf -march=rv32imac -mabi=ilp32` | Library compile, static layout checks, symbol check, footprint |
 | 2 Cross | `riscv64-unknown-elf-gcc` | RV32IMAC `-march=rv32imac -mabi=ilp32`; RV32I `-march=rv32i -mabi=ilp32` (no divider); RV64IMAC `-march=rv64imac -mabi=lp64` | Library compile, static layout checks, symbol check, footprint |
 | 2 Cross | `avr-gcc` | `-mmcu=atmega328p` (16-bit `int`, `size_t` and pointers) | Library compile, static layout checks, symbol check, footprint |
 | 3 Target execution | any tier-2 compiler + QEMU | — | Optional and not required. Registered only if `qemu-system-arm` is found: runs the unit tests on `mps2-an385` (Cortex-M3) with semihosting. Not part of any gate. |
 
-Why so many rows: each one catches a class of bugs the others cannot. Older compilers catch reliance on recent C11 support and different warning sets. `-m32` and `armhf`/`powerpc` give 32-bit pointers and `size_t` with real test execution. `powerpc` and `s390x` are big-endian, so any test or helper that silently assumes byte order fails there. AppleClang is a different vendor toolchain with a non-ELF object format. The bare-metal tier 2 adds 8- and 16-bit `int`, no hardware divider and strict alignment, and is where size is measured.
+Why so many rows: each one catches a class of bugs the others cannot. Older compilers catch reliance on recent C11 support and different warning sets. `-m32` and `armhf`/`powerpc` give 32-bit pointers and `size_t` with real test execution. `powerpc` and `s390x` are big-endian, so any test or helper that silently assumes byte order fails there. The bare-metal tier 2 adds 8- and 16-bit `int`, no hardware divider and strict alignment, and is where size is measured.
 
-Tier-1E details: each target has a CMake toolchain file `cmake/toolchains/linux-<arch>.cmake` that sets `CMAKE_SYSTEM_NAME Linux`, `CMAKE_SYSTEM_PROCESSOR`, `CMAKE_C_COMPILER <triple>-gcc`, `CMAKE_EXE_LINKER_FLAGS_INIT -static` and `CMAKE_CROSSCOMPILING_EMULATOR qemu-<arch>-static` (`qemu-aarch64-static`, `qemu-arm-static`, `qemu-riscv64-static`, `qemu-ppc-static`, `qemu-s390x-static`). With static linking and an explicit emulator, `ctest` runs the binaries without a sysroot and without `binfmt_misc`, which a CI container cannot register. If a package name differs on the CI image, keep the target's properties (word size, endianness) and record the substitution in `docs/OPEN_QUESTIONS.md`.
+Tier-1E details: each target has a CMake toolchain file `cmake/toolchains/linux-<arch>.cmake` that sets `CMAKE_SYSTEM_NAME Linux`, `CMAKE_SYSTEM_PROCESSOR`, `CMAKE_C_COMPILER <triple>-gcc`, `CMAKE_EXE_LINKER_FLAGS_INIT -static` and `CMAKE_CROSSCOMPILING_EMULATOR qemu-<arch>` (`qemu-aarch64`, `qemu-arm`, `qemu-riscv64`, `qemu-ppc`, `qemu-s390x`; these binaries are statically linked, so the name has no `-static` suffix on Ubuntu 26.04). With static linking and an explicit emulator, `ctest` runs the binaries without a sysroot and without `binfmt_misc`, which a CI container cannot register. If a package name differs on the CI image, keep the target's properties (word size, endianness) and record the substitution in `docs/OPEN_QUESTIONS.md`.
+
+**Non-goals.** macOS (AppleClang, Mach-O) and Windows are not supported or tested in V1 and have no priority. They may be considered after every other item in this plan is done. Nothing in `src/` or `include/` may prevent such a port, but no job, test or script is spent on it.
 
 Tier-2 configurations: every test configuration except `pthread`. AVR also excludes `wide`, which must fail there with the expected message (XC-04). Test configuration headers, and the support headers they include, must therefore compile freestanding: they may only include the headers allowed by R-02.
 
@@ -309,9 +310,9 @@ if(BLOC_CONFIG_HEADER)
   target_include_directories(bloc PUBLIC ${BLOC_CONFIG_DIRS})
 endif()
 target_compile_options(bloc PRIVATE
-  $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:<library warning flags of section 3.3>>
+  $<$<C_COMPILER_ID:GNU,Clang>:<library warning flags of section 3.3>>
   $<$<C_COMPILER_ID:GNU>:-Wcast-align=strict>
-  $<$<AND:$<BOOL:${BLOC_WERROR}>,$<C_COMPILER_ID:GNU,Clang,AppleClang>>:-Werror>)
+  $<$<AND:$<BOOL:${BLOC_WERROR}>,$<C_COMPILER_ID:GNU,Clang>>:-Werror>)
 
 if(BLOC_BUILD_TESTS)
   if(NOT BLOC_IS_TOP_LEVEL)
@@ -931,7 +932,6 @@ Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake tar
 | CC-02 | 32-bit host (`-m32`, needs `gcc-multilib`): all seven configurations pass at Debug and `default` at Release; `sizeof(struct bloc_handle) == 12` in `default`. Required in CI (`host` job); optional locally, where a missing `gcc-multilib` gives a `SKIP` line. |
 | CC-03 | Configurations `default`, `debug` and `nochecks` additionally pass with both compilers at Release (`-O2`) and MinSizeRel (`-Os`). This catches optimization-dependent undefined behaviour in the configuration used for footprint measurement. |
 | CC-04 | Older compilers: CC-01 and CC-03 also pass with the default GCC and Clang of `ubuntu:24.04` (GCC 13, Clang 18) and `ubuntu:22.04` (GCC 11, Clang 14, the oldest supported versions of section 3.1), with zero warnings. `build_one.sh` prints `$CC --version` first, so the log shows the exact version tested. If an old compiler emits a false-positive warning that cannot be avoided by better code, disable that one warning for that compiler version only in CMake, with a comment, and record it in `docs/OPEN_QUESTIONS.md`. |
-| CC-05 | macOS: on `macos-latest` (AppleClang, arm64, Mach-O), all seven configurations pass at Debug and `default` at Release, and FC-01 passes. No coverage, sanitizer, symbol or size checks there (`nm` and section names differ on Mach-O). |
 
 ### 9.4 Cross compilers (tier 2, `scripts/cross_check.sh`)
 
@@ -968,7 +968,7 @@ Measured matrix:
 
 | ID | Requirement |
 | --- | --- |
-| EM-01 | For each tier-1E target of section 3.6, all seven configurations build with the target's toolchain file at Debug with zero warnings, and the complete CTest suite passes under `qemu-<arch>-static`. |
+| EM-01 | For each tier-1E target of section 3.6, all seven configurations build with the target's toolchain file at Debug with zero warnings, and the complete CTest suite passes under `qemu-<arch>`. |
 | EM-02 | `default` and `nochecks` additionally pass at MinSizeRel (`-Os`) on every tier-1E target. |
 | EM-03 | Symbol check on the MinSizeRel library object of `default`, and of `debug` with the default `BLOC_PLATFORM_ASSERT`, built with `-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0`: undefined symbols ⊆ `{memcpy, memset}` (debug may add the division helpers allowed by R-03). Uses `<triple>-nm`. |
 | EM-04 | `test/test_platform.c` is built only when the build passes `BLOC_EXPECT_BIG_ENDIAN` and `BLOC_EXPECT_PTR_BITS` (set by `build_one.sh` from the target table). It asserts at run time that the byte order (checked through a `uint32_t`/`uint8_t[4]` union) and `sizeof(void *) * CHAR_BIT` match the table. This proves that each emulated job really executed code for the architecture it claims, and not, for example, a host binary. It is in `test/`, not `src/`, so coverage is unaffected (R-08). |
@@ -1041,7 +1041,6 @@ Triggers: `push` to `main` and tags `v*`, `pull_request` to `main`, `workflow_di
 | --- | --- | --- | --- | --- |
 | `gate` | `ubuntu:26.04` | – | clang-format check over `include/ src/ test/ examples/`; `check_no_heap.sh --grep-only`; `build_one.sh host default Debug --no-test` | NH-03, format |
 | `host` | `_target.yml` | gcc and clang × `ubuntu:26.04`, `ubuntu:24.04`, `ubuntu:22.04` (6 cells), plus gcc `-m32` on `ubuntu:26.04` | 7 configuration steps at Debug; optimized step: `default debug nochecks` × Release, MinSizeRel (`-m32`: `default` × Release); examples build | CC-01..04 |
-| `macos` | `macos-latest` | – | 7 configuration steps at Debug; `default` at Release; `fetchcontent_smoke.sh basic` | CC-05, FC-01 |
 | `emulated` | `_target.yml`, `ubuntu:26.04` | `aarch64`, `armhf`, `riscv64`, `powerpc`, `s390x` | 7 configuration steps at Debug (ctest under qemu); optimized step: `default nochecks` × MinSizeRel; symbol check | EM-01..04 |
 | `baremetal` | `_target.yml`, `ubuntu:26.04` | families `arm-gcc`, `clang` (thumbv6m, thumbv7m, rv32imac), `riscv-gcc`, `avr-gcc` | 6 configuration steps (`build_one.sh family:<f> <cfg>`: compile, symbols, static layout check, expected failures such as AVR `wide`); footprint step (`check_size.sh --family <f>`, summary + artifact) | XC-01..05, FP-01..05 |
 | `coverage` | `ubuntu:26.04` | – | one step per coverage-gated configuration: `scripts/coverage.sh <cfg>`; upload HTML reports | Q-01 |
@@ -1103,7 +1102,7 @@ Steps: checkout → `apt_install.sh` (`id: install`) → `build_one.sh --version
 | 15 API | CFG-10, CFG-11, CF-10 |
 | 17 Code size | FP-01..06, XC-02, CC-03 |
 | – (plan R-10, section 3.8: CMake, consumption) | CM-01..10 via FC-01..10 |
-| – (plan Q-08: compilers and architectures) | CC-01..05, EM-01..04, XC-01..05 |
+| – (plan Q-08: compilers and architectures) | CC-01..04, EM-01..04, XC-01..05 |
 
 ---
 
@@ -1121,7 +1120,7 @@ Work:
 - Test support library (section 5) complete, with its own self-tests (`test_support.c`: guard band detection, assertion bookkeeping, lock tracer errors).
 - All seven `test/configs/cfg_*.h`.
 - Stub `include/bloc.h`, `include/bloc_opt.h` and `src/bloc.c`. An empty translation unit is not valid ISO C under `-Wpedantic`, so the stub `bloc.c` contains one internal declaration, e.g. `typedef int bloc_i_translation_unit_not_empty;`.
-- `scripts/*.sh` skeletons, including `cross_check.sh` (loop over the bare-metal targets of `target_table.sh`) and `check_size.sh` (report only). Also `.clang-format` and both workflow files (`ci.yml`, `_target.yml`) with every job of section 10.2 and Appendix A. Initially `ci-ok.needs` lists `gate`, `host`, `macos`, `emulated` and `fetchcontent`. `coverage`, `no-heap` and `baremetal` join in phase 2; `sanitize` and `lto` in phase 5; `fetchcontent-online` in phase 6. Until then these jobs run but are informational (section 10.1, item 10). The footprint step is informational until phase 4.
+- `scripts/*.sh` skeletons, including `cross_check.sh` (loop over the bare-metal targets of `target_table.sh`) and `check_size.sh` (report only). Also `.clang-format` and both workflow files (`ci.yml`, `_target.yml`) with every job of section 10.2 and Appendix A. Initially `ci-ok.needs` lists `gate`, `host`, `emulated` and `fetchcontent`. `coverage`, `no-heap` and `baremetal` join in phase 2; `sanitize` and `lto` in phase 5; `fetchcontent-online` in phase 6. Until then these jobs run but are informational (section 10.1, item 10). The footprint step is informational until phase 4.
 
 DoD: `ctest` runs `test_support` green in all configurations with GCC and Clang, on the 32-bit host and on every tier-1E target (EM-04 passes, so each emulated job runs the right architecture); `cross_check.sh` compiles the stub `bloc.c` for every tier-2 target; FC-02, FC-06, FC-07 and FC-08 pass with the macro-only `main.c`; the CI pipeline runs end to end, and `ci-ok` is green.
 
@@ -1177,7 +1176,7 @@ Commit: `phase 5: cross-cutting debug, thread-safety and model-based tests`
 
 Work: complete `scripts/sanitize.sh` and `scripts/check_no_heap.sh`, the `-O2`/`-Os` host builds (CC-03), the FP-04 baseline gate, and the EM-03 symbol check. Add `fetchcontent-online` to `ci-ok.needs`; every job of section 10.2 is now required. Adjust every `timeout-minutes` to about four times the observed duration. Enable branch protection on `main` with `ci-ok` as the only required check (the repository owner does this; note it in the commit message). Confirm Q-02: `grep -rnE "LCOV_EXCL|GCOVR_EXCL" src include test` returns nothing.
 
-Tests: SAN-01..03, NH-01..03, CC-01..05, XC-01..05, FP-01..06, EM-01..04, FC-01..09.
+Tests: SAN-01..03, NH-01..03, CC-01..04, XC-01..05, FP-01..06, EM-01..04, FC-01..10.
 
 DoD: the full CI pipeline is green with all gates blocking.
 
@@ -1205,7 +1204,7 @@ Commit: `phase 7: README, examples and API documentation`
 - [ ] Footprint within the spec section 17 budgets on ARMv6-M and ARMv7-M; FP-01..06 green; `scripts/size_baseline.txt` committed.
 - [ ] ASan/UBSan and TSan runs clean.
 - [ ] No-heap check NH-01..03 green; the library references only `memcpy` and `memset`.
-- [ ] All tier-1 host compilers (CC-01..05) and tier-1E emulated targets (EM-01..04) green; LTO-01..02 green.
+- [ ] All tier-1 host compilers (CC-01..04) and tier-1E emulated targets (EM-01..04) green; LTO-01..02 green.
 - [ ] CMake rules CM-01..10 implemented; FetchContent smoke tests FC-01..10 green, including the CMake 3.20 floor and the bare-metal consumer.
 - [ ] CI pipeline (section 10) green on `main`, with `ci-ok` as the required check and every job listed in it.
 - [ ] `docs/OPEN_QUESTIONS.md` either absent or every entry has a chosen interpretation and linked tests.
@@ -1278,34 +1277,22 @@ jobs:
       optconfigs: ${{ matrix.optconfigs || 'default debug nochecks' }}
       optbuildtypes: ${{ matrix.optbuildtypes || 'Release MinSizeRel' }}
 
-  macos:
-    needs: gate
-    runs-on: macos-latest          # AppleClang, arm64; cmake and ninja are preinstalled
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v7
-      - { name: default,  if: "${{ !cancelled() }}", run: scripts/ci/build_one.sh host-appleclang default Debug }
-      - { name: debug,    if: "${{ !cancelled() }}", run: scripts/ci/build_one.sh host-appleclang debug Debug }
-      # ... nochecks, wide, noalign, bigalign, pthread ...
-      - { name: default (Release), if: "${{ !cancelled() }}", run: scripts/ci/build_one.sh host-appleclang default Release }
-      - { name: FetchContent (FC-01), if: "${{ !cancelled() }}", run: scripts/fetchcontent_smoke.sh basic }
-
   emulated:
     needs: gate
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: 'aarch64 (qemu)',               selector: aarch64, packages: 'gcc-aarch64-linux-gnu' }
-          - { name: 'armhf (qemu)',                 selector: armhf,   packages: 'gcc-arm-linux-gnueabihf' }
-          - { name: 'riscv64 (qemu)',               selector: riscv64, packages: 'gcc-riscv64-linux-gnu' }
-          - { name: 'powerpc (qemu, big-endian)',   selector: powerpc, packages: 'gcc-powerpc-linux-gnu' }
-          - { name: 's390x (qemu, big-endian)',     selector: s390x,   packages: 'gcc-s390x-linux-gnu' }
+          - { name: 'aarch64 (qemu)',               selector: aarch64, packages: 'gcc-aarch64-linux-gnu', libc: arm64 }
+          - { name: 'armhf (qemu)',                 selector: armhf,   packages: 'gcc-arm-linux-gnueabihf', libc: armhf }
+          - { name: 'riscv64 (qemu)',               selector: riscv64, packages: 'gcc-riscv64-linux-gnu', libc: riscv64 }
+          - { name: 'powerpc (qemu, big-endian)',   selector: powerpc, packages: 'gcc-powerpc-linux-gnu', libc: powerpc }
+          - { name: 's390x (qemu, big-endian)',     selector: s390x,   packages: 'gcc-s390x-linux-gnu', libc: s390x }
     uses: ./.github/workflows/_target.yml
     with:
       name: ${{ matrix.name }}
       container: 'ubuntu:26.04'
-      packages: ${{ matrix.packages }} qemu-user-static cmake ninja-build
+      packages: ${{ matrix.packages }} qemu-user libc6-dev-${{ matrix.libc }}-cross cmake ninja-build
       selector: ${{ matrix.selector }}
       optconfigs: 'default nochecks'
       optbuildtypes: 'MinSizeRel'
@@ -1445,7 +1432,7 @@ jobs:
 
   ci-ok:
     if: always()
-    needs: [gate, host, macos, emulated, baremetal, coverage, sanitize, lto, no-heap, fetchcontent, fetchcontent-online]
+    needs: [gate, host, emulated, baremetal, coverage, sanitize, lto, no-heap, fetchcontent, fetchcontent-online]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
