@@ -327,7 +327,7 @@ bloc_handle_t bloc_calloc(bloc_pool_handle_t pool, bloc_size_t headroom);
 ### bloc_alloc
 
 1. `pool` is `NULL` (with `BLOC_CHECKS`) or not initialized → `NULL`.
-2. Compute `offset = align_up(headroom, BLOC_PAYLOAD_ALIGNMENT)` in `size_t`. If `offset > element_size` → `NULL`. No block is taken and no failure is counted.
+2. If `align_up(headroom, BLOC_PAYLOAD_ALIGNMENT) > element_size` → `NULL`. No block is taken and no failure is counted. The comparison must not overflow: when `BLOC_SIZE_T` is as wide as `size_t`, the rounding itself can wrap (for example `headroom = BLOC_SIZE_MAX`), so it is evaluated as `headroom > align_down(element_size, BLOC_PAYLOAD_ALIGNMENT)`, which is equivalent. Only after this check passed is `offset = align_up(headroom, BLOC_PAYLOAD_ALIGNMENT)` computed; it then fits `bloc_size_t`.
 3. Take the first block from the free list. If the list is empty → `NULL`, and `alloc_failures` is incremented when `BLOC_STATS = 1`.
 4. Set `link.pool = pool`, `refcount = 1`, `len = 0`, `offset` as computed.
 5. Increment `active_count` and update `high_water`.
@@ -775,4 +775,4 @@ All 26 findings of the first review are resolved; four were design decisions by 
 | 2 | 2026-10-03 | Review resolved (Appendix B), API revised (section 15) |
 | 3 | 2026-10-03 | No-heap and libc dependency rules (section 2); `BLOC_ASSERT(x)` replaced by lwIP-style `BLOC_PLATFORM_ASSERT(msg)` with a libc-free trapping default; `BLOC_DEBUG` requires `BLOC_CHECKS`; exact static-assert messages; `BLOC_ELEMENT_SIZE_MAX` and `*_MAX` constants; pool unchanged on failed init; bail/continue semantics after a returning assertion; handle-validity steps and check order; asserts never under lock; runtime invariant assert reduced to the O(1) one; header split into `bloc.h` and `bloc_opt.h` |
 | 4 | 2026-10-03 | Code-size requirement with `.text` budgets for ARMv6-M and ARMv7-M (section 17); no compiler runtime helpers without `BLOC_DEBUG` (section 2); `bloc_pool_init` size check without division (section 7) |
-| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002) |
+| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002); the headroom check of `bloc_alloc` must not overflow (section 8, OQ-003) |

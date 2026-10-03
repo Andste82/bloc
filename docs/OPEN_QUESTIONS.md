@@ -58,6 +58,12 @@ the interpretation that was chosen and the tests it affects.
   rounding is only done after that check passed.
 - **Tests affected:** ALLOC-02, ALLOC-03 (including `BLOC_SIZE_MAX` and an element size that is not
   a multiple of PA), ALLOC-11.
+- **Resolution (2026-10-03):** this was a defect in the spec: implemented literally, step 2 lets an
+  oversize headroom through on 32-bit targets with `wide`. Spec section 8 (revision 5) now requires
+  the overflow-free comparison `headroom > align_down(element_size, PA)` and rounds only afterwards;
+  plan section 4.5 shows the same order. The code and the tests already did this; ALLOC-03 runs with
+  `wide` on the 32-bit CI targets (armhf, powerpc, gcc-15-m32), where the literal form would fail.
+  The other bounds checks already use the subtraction form of spec section 13.
 
 ## OQ-004 Undefined symbols that the plan's allow-lists did not foresee (XC-02, NH-01..02, EM-03)
 

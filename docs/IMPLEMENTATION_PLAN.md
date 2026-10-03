@@ -429,8 +429,9 @@ UNLOCK; return BLOC_OK
 ```text
 CHECK pool != NULL                                  → NULL
 CHECK pool->storage != NULL                         → NULL
-off = BLOC_ALIGN_UP(headroom, BLOC_PAYLOAD_ALIGNMENT)          (size_t)
-if off > element_size: return NULL                  (no assert, no lock, no stat)
+if headroom > align_down(element_size, PA): return NULL   (no assert, no lock, no stat;
+                                                 overflow-free form of spec 8 step 2)
+off = BLOC_ALIGN_UP(headroom, BLOC_PAYLOAD_ALIGNMENT)          (cannot wrap any more)
 LOCK
 b = free_head
 if b == NULL: [STATS: if alloc_failures < BLOC_COUNT_MAX then alloc_failures++]
