@@ -1,0 +1,1574 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}"
+    },
+    {
+      "name": "gcc-default",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "default"
+      }
+    },
+    {
+      "name": "gcc-default-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "default"
+      }
+    },
+    {
+      "name": "gcc-default-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "default"
+      }
+    },
+    {
+      "name": "gcc-debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "debug"
+      }
+    },
+    {
+      "name": "gcc-debug-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "debug"
+      }
+    },
+    {
+      "name": "gcc-debug-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "debug"
+      }
+    },
+    {
+      "name": "gcc-nochecks",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "nochecks"
+      }
+    },
+    {
+      "name": "gcc-nochecks-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "nochecks"
+      }
+    },
+    {
+      "name": "gcc-nochecks-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "nochecks"
+      }
+    },
+    {
+      "name": "gcc-wide",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "wide"
+      }
+    },
+    {
+      "name": "gcc-wide-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "wide"
+      }
+    },
+    {
+      "name": "gcc-wide-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "wide"
+      }
+    },
+    {
+      "name": "gcc-noalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "noalign"
+      }
+    },
+    {
+      "name": "gcc-noalign-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "noalign"
+      }
+    },
+    {
+      "name": "gcc-noalign-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "noalign"
+      }
+    },
+    {
+      "name": "gcc-bigalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "bigalign"
+      }
+    },
+    {
+      "name": "gcc-bigalign-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "bigalign"
+      }
+    },
+    {
+      "name": "gcc-bigalign-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "bigalign"
+      }
+    },
+    {
+      "name": "gcc-pthread",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "pthread"
+      }
+    },
+    {
+      "name": "gcc-pthread-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "pthread"
+      }
+    },
+    {
+      "name": "gcc-pthread-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "pthread"
+      }
+    },
+    {
+      "name": "clang-default",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "default"
+      }
+    },
+    {
+      "name": "clang-default-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "default"
+      }
+    },
+    {
+      "name": "clang-default-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "default"
+      }
+    },
+    {
+      "name": "clang-debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "debug"
+      }
+    },
+    {
+      "name": "clang-debug-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "debug"
+      }
+    },
+    {
+      "name": "clang-debug-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "debug"
+      }
+    },
+    {
+      "name": "clang-nochecks",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "nochecks"
+      }
+    },
+    {
+      "name": "clang-nochecks-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "nochecks"
+      }
+    },
+    {
+      "name": "clang-nochecks-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "nochecks"
+      }
+    },
+    {
+      "name": "clang-wide",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "wide"
+      }
+    },
+    {
+      "name": "clang-wide-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "wide"
+      }
+    },
+    {
+      "name": "clang-wide-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "wide"
+      }
+    },
+    {
+      "name": "clang-noalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "noalign"
+      }
+    },
+    {
+      "name": "clang-noalign-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "noalign"
+      }
+    },
+    {
+      "name": "clang-noalign-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "noalign"
+      }
+    },
+    {
+      "name": "clang-bigalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "bigalign"
+      }
+    },
+    {
+      "name": "clang-bigalign-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "bigalign"
+      }
+    },
+    {
+      "name": "clang-bigalign-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "bigalign"
+      }
+    },
+    {
+      "name": "clang-pthread",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "pthread"
+      }
+    },
+    {
+      "name": "clang-pthread-rel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "pthread"
+      }
+    },
+    {
+      "name": "clang-pthread-size",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "BLOC_TEST_CONFIG": "pthread"
+      }
+    },
+    {
+      "name": "cov-default",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "default",
+        "BLOC_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "cov-debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "debug",
+        "BLOC_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "cov-nochecks",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "nochecks",
+        "BLOC_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "cov-wide",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "wide",
+        "BLOC_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "cov-noalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "noalign",
+        "BLOC_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "cov-bigalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "bigalign",
+        "BLOC_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "san-gcc-default",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "default",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-gcc-debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "debug",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-gcc-nochecks",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "nochecks",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-gcc-wide",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "wide",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-gcc-noalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "noalign",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-gcc-bigalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "bigalign",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-gcc-pthread",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "pthread",
+        "BLOC_SANITIZE": "thread"
+      }
+    },
+    {
+      "name": "san-clang-default",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "default",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-clang-debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "debug",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-clang-nochecks",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "nochecks",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-clang-wide",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "wide",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-clang-noalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "noalign",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-clang-bigalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "bigalign",
+        "BLOC_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "san-clang-pthread",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLOC_TEST_CONFIG": "pthread",
+        "BLOC_SANITIZE": "thread"
+      }
+    },
+    {
+      "name": "lto-gcc-default",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "default",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-gcc-debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "debug",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-gcc-nochecks",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "nochecks",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-gcc-wide",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "wide",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-gcc-noalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "noalign",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-gcc-bigalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "bigalign",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-gcc-pthread",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "pthread",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-clang-default",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "default",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-clang-debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "debug",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-clang-nochecks",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "nochecks",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-clang-wide",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "wide",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-clang-noalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "noalign",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-clang-bigalign",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "bigalign",
+        "BLOC_LTO": "ON"
+      }
+    },
+    {
+      "name": "lto-clang-pthread",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BLOC_TEST_CONFIG": "pthread",
+        "BLOC_LTO": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "gcc-default",
+      "configurePreset": "gcc-default"
+    },
+    {
+      "name": "gcc-default-rel",
+      "configurePreset": "gcc-default-rel"
+    },
+    {
+      "name": "gcc-default-size",
+      "configurePreset": "gcc-default-size"
+    },
+    {
+      "name": "gcc-debug",
+      "configurePreset": "gcc-debug"
+    },
+    {
+      "name": "gcc-debug-rel",
+      "configurePreset": "gcc-debug-rel"
+    },
+    {
+      "name": "gcc-debug-size",
+      "configurePreset": "gcc-debug-size"
+    },
+    {
+      "name": "gcc-nochecks",
+      "configurePreset": "gcc-nochecks"
+    },
+    {
+      "name": "gcc-nochecks-rel",
+      "configurePreset": "gcc-nochecks-rel"
+    },
+    {
+      "name": "gcc-nochecks-size",
+      "configurePreset": "gcc-nochecks-size"
+    },
+    {
+      "name": "gcc-wide",
+      "configurePreset": "gcc-wide"
+    },
+    {
+      "name": "gcc-wide-rel",
+      "configurePreset": "gcc-wide-rel"
+    },
+    {
+      "name": "gcc-wide-size",
+      "configurePreset": "gcc-wide-size"
+    },
+    {
+      "name": "gcc-noalign",
+      "configurePreset": "gcc-noalign"
+    },
+    {
+      "name": "gcc-noalign-rel",
+      "configurePreset": "gcc-noalign-rel"
+    },
+    {
+      "name": "gcc-noalign-size",
+      "configurePreset": "gcc-noalign-size"
+    },
+    {
+      "name": "gcc-bigalign",
+      "configurePreset": "gcc-bigalign"
+    },
+    {
+      "name": "gcc-bigalign-rel",
+      "configurePreset": "gcc-bigalign-rel"
+    },
+    {
+      "name": "gcc-bigalign-size",
+      "configurePreset": "gcc-bigalign-size"
+    },
+    {
+      "name": "gcc-pthread",
+      "configurePreset": "gcc-pthread"
+    },
+    {
+      "name": "gcc-pthread-rel",
+      "configurePreset": "gcc-pthread-rel"
+    },
+    {
+      "name": "gcc-pthread-size",
+      "configurePreset": "gcc-pthread-size"
+    },
+    {
+      "name": "clang-default",
+      "configurePreset": "clang-default"
+    },
+    {
+      "name": "clang-default-rel",
+      "configurePreset": "clang-default-rel"
+    },
+    {
+      "name": "clang-default-size",
+      "configurePreset": "clang-default-size"
+    },
+    {
+      "name": "clang-debug",
+      "configurePreset": "clang-debug"
+    },
+    {
+      "name": "clang-debug-rel",
+      "configurePreset": "clang-debug-rel"
+    },
+    {
+      "name": "clang-debug-size",
+      "configurePreset": "clang-debug-size"
+    },
+    {
+      "name": "clang-nochecks",
+      "configurePreset": "clang-nochecks"
+    },
+    {
+      "name": "clang-nochecks-rel",
+      "configurePreset": "clang-nochecks-rel"
+    },
+    {
+      "name": "clang-nochecks-size",
+      "configurePreset": "clang-nochecks-size"
+    },
+    {
+      "name": "clang-wide",
+      "configurePreset": "clang-wide"
+    },
+    {
+      "name": "clang-wide-rel",
+      "configurePreset": "clang-wide-rel"
+    },
+    {
+      "name": "clang-wide-size",
+      "configurePreset": "clang-wide-size"
+    },
+    {
+      "name": "clang-noalign",
+      "configurePreset": "clang-noalign"
+    },
+    {
+      "name": "clang-noalign-rel",
+      "configurePreset": "clang-noalign-rel"
+    },
+    {
+      "name": "clang-noalign-size",
+      "configurePreset": "clang-noalign-size"
+    },
+    {
+      "name": "clang-bigalign",
+      "configurePreset": "clang-bigalign"
+    },
+    {
+      "name": "clang-bigalign-rel",
+      "configurePreset": "clang-bigalign-rel"
+    },
+    {
+      "name": "clang-bigalign-size",
+      "configurePreset": "clang-bigalign-size"
+    },
+    {
+      "name": "clang-pthread",
+      "configurePreset": "clang-pthread"
+    },
+    {
+      "name": "clang-pthread-rel",
+      "configurePreset": "clang-pthread-rel"
+    },
+    {
+      "name": "clang-pthread-size",
+      "configurePreset": "clang-pthread-size"
+    },
+    {
+      "name": "cov-default",
+      "configurePreset": "cov-default"
+    },
+    {
+      "name": "cov-debug",
+      "configurePreset": "cov-debug"
+    },
+    {
+      "name": "cov-nochecks",
+      "configurePreset": "cov-nochecks"
+    },
+    {
+      "name": "cov-wide",
+      "configurePreset": "cov-wide"
+    },
+    {
+      "name": "cov-noalign",
+      "configurePreset": "cov-noalign"
+    },
+    {
+      "name": "cov-bigalign",
+      "configurePreset": "cov-bigalign"
+    },
+    {
+      "name": "san-gcc-default",
+      "configurePreset": "san-gcc-default"
+    },
+    {
+      "name": "san-gcc-debug",
+      "configurePreset": "san-gcc-debug"
+    },
+    {
+      "name": "san-gcc-nochecks",
+      "configurePreset": "san-gcc-nochecks"
+    },
+    {
+      "name": "san-gcc-wide",
+      "configurePreset": "san-gcc-wide"
+    },
+    {
+      "name": "san-gcc-noalign",
+      "configurePreset": "san-gcc-noalign"
+    },
+    {
+      "name": "san-gcc-bigalign",
+      "configurePreset": "san-gcc-bigalign"
+    },
+    {
+      "name": "san-gcc-pthread",
+      "configurePreset": "san-gcc-pthread"
+    },
+    {
+      "name": "san-clang-default",
+      "configurePreset": "san-clang-default"
+    },
+    {
+      "name": "san-clang-debug",
+      "configurePreset": "san-clang-debug"
+    },
+    {
+      "name": "san-clang-nochecks",
+      "configurePreset": "san-clang-nochecks"
+    },
+    {
+      "name": "san-clang-wide",
+      "configurePreset": "san-clang-wide"
+    },
+    {
+      "name": "san-clang-noalign",
+      "configurePreset": "san-clang-noalign"
+    },
+    {
+      "name": "san-clang-bigalign",
+      "configurePreset": "san-clang-bigalign"
+    },
+    {
+      "name": "san-clang-pthread",
+      "configurePreset": "san-clang-pthread"
+    },
+    {
+      "name": "lto-gcc-default",
+      "configurePreset": "lto-gcc-default"
+    },
+    {
+      "name": "lto-gcc-debug",
+      "configurePreset": "lto-gcc-debug"
+    },
+    {
+      "name": "lto-gcc-nochecks",
+      "configurePreset": "lto-gcc-nochecks"
+    },
+    {
+      "name": "lto-gcc-wide",
+      "configurePreset": "lto-gcc-wide"
+    },
+    {
+      "name": "lto-gcc-noalign",
+      "configurePreset": "lto-gcc-noalign"
+    },
+    {
+      "name": "lto-gcc-bigalign",
+      "configurePreset": "lto-gcc-bigalign"
+    },
+    {
+      "name": "lto-gcc-pthread",
+      "configurePreset": "lto-gcc-pthread"
+    },
+    {
+      "name": "lto-clang-default",
+      "configurePreset": "lto-clang-default"
+    },
+    {
+      "name": "lto-clang-debug",
+      "configurePreset": "lto-clang-debug"
+    },
+    {
+      "name": "lto-clang-nochecks",
+      "configurePreset": "lto-clang-nochecks"
+    },
+    {
+      "name": "lto-clang-wide",
+      "configurePreset": "lto-clang-wide"
+    },
+    {
+      "name": "lto-clang-noalign",
+      "configurePreset": "lto-clang-noalign"
+    },
+    {
+      "name": "lto-clang-bigalign",
+      "configurePreset": "lto-clang-bigalign"
+    },
+    {
+      "name": "lto-clang-pthread",
+      "configurePreset": "lto-clang-pthread"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "gcc-default",
+      "configurePreset": "gcc-default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-default-rel",
+      "configurePreset": "gcc-default-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-default-size",
+      "configurePreset": "gcc-default-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-debug",
+      "configurePreset": "gcc-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-debug-rel",
+      "configurePreset": "gcc-debug-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-debug-size",
+      "configurePreset": "gcc-debug-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-nochecks",
+      "configurePreset": "gcc-nochecks",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-nochecks-rel",
+      "configurePreset": "gcc-nochecks-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-nochecks-size",
+      "configurePreset": "gcc-nochecks-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-wide",
+      "configurePreset": "gcc-wide",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-wide-rel",
+      "configurePreset": "gcc-wide-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-wide-size",
+      "configurePreset": "gcc-wide-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-noalign",
+      "configurePreset": "gcc-noalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-noalign-rel",
+      "configurePreset": "gcc-noalign-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-noalign-size",
+      "configurePreset": "gcc-noalign-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-bigalign",
+      "configurePreset": "gcc-bigalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-bigalign-rel",
+      "configurePreset": "gcc-bigalign-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-bigalign-size",
+      "configurePreset": "gcc-bigalign-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-pthread",
+      "configurePreset": "gcc-pthread",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-pthread-rel",
+      "configurePreset": "gcc-pthread-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-pthread-size",
+      "configurePreset": "gcc-pthread-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-default",
+      "configurePreset": "clang-default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-default-rel",
+      "configurePreset": "clang-default-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-default-size",
+      "configurePreset": "clang-default-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-debug",
+      "configurePreset": "clang-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-debug-rel",
+      "configurePreset": "clang-debug-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-debug-size",
+      "configurePreset": "clang-debug-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-nochecks",
+      "configurePreset": "clang-nochecks",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-nochecks-rel",
+      "configurePreset": "clang-nochecks-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-nochecks-size",
+      "configurePreset": "clang-nochecks-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-wide",
+      "configurePreset": "clang-wide",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-wide-rel",
+      "configurePreset": "clang-wide-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-wide-size",
+      "configurePreset": "clang-wide-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-noalign",
+      "configurePreset": "clang-noalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-noalign-rel",
+      "configurePreset": "clang-noalign-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-noalign-size",
+      "configurePreset": "clang-noalign-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-bigalign",
+      "configurePreset": "clang-bigalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-bigalign-rel",
+      "configurePreset": "clang-bigalign-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-bigalign-size",
+      "configurePreset": "clang-bigalign-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-pthread",
+      "configurePreset": "clang-pthread",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-pthread-rel",
+      "configurePreset": "clang-pthread-rel",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-pthread-size",
+      "configurePreset": "clang-pthread-size",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "cov-default",
+      "configurePreset": "cov-default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "cov-debug",
+      "configurePreset": "cov-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "cov-nochecks",
+      "configurePreset": "cov-nochecks",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "cov-wide",
+      "configurePreset": "cov-wide",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "cov-noalign",
+      "configurePreset": "cov-noalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "cov-bigalign",
+      "configurePreset": "cov-bigalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-gcc-default",
+      "configurePreset": "san-gcc-default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-gcc-debug",
+      "configurePreset": "san-gcc-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-gcc-nochecks",
+      "configurePreset": "san-gcc-nochecks",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-gcc-wide",
+      "configurePreset": "san-gcc-wide",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-gcc-noalign",
+      "configurePreset": "san-gcc-noalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-gcc-bigalign",
+      "configurePreset": "san-gcc-bigalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-gcc-pthread",
+      "configurePreset": "san-gcc-pthread",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-clang-default",
+      "configurePreset": "san-clang-default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-clang-debug",
+      "configurePreset": "san-clang-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-clang-nochecks",
+      "configurePreset": "san-clang-nochecks",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-clang-wide",
+      "configurePreset": "san-clang-wide",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-clang-noalign",
+      "configurePreset": "san-clang-noalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-clang-bigalign",
+      "configurePreset": "san-clang-bigalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "san-clang-pthread",
+      "configurePreset": "san-clang-pthread",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-gcc-default",
+      "configurePreset": "lto-gcc-default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-gcc-debug",
+      "configurePreset": "lto-gcc-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-gcc-nochecks",
+      "configurePreset": "lto-gcc-nochecks",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-gcc-wide",
+      "configurePreset": "lto-gcc-wide",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-gcc-noalign",
+      "configurePreset": "lto-gcc-noalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-gcc-bigalign",
+      "configurePreset": "lto-gcc-bigalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-gcc-pthread",
+      "configurePreset": "lto-gcc-pthread",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-clang-default",
+      "configurePreset": "lto-clang-default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-clang-debug",
+      "configurePreset": "lto-clang-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-clang-nochecks",
+      "configurePreset": "lto-clang-nochecks",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-clang-wide",
+      "configurePreset": "lto-clang-wide",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-clang-noalign",
+      "configurePreset": "lto-clang-noalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-clang-bigalign",
+      "configurePreset": "lto-clang-bigalign",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "lto-clang-pthread",
+      "configurePreset": "lto-clang-pthread",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
