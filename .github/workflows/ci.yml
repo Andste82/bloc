@@ -1,0 +1,227 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1'        # weekly: image drift, FC-09
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+# Jobs listed in ci-ok.needs are required; the others are informational until the phase of the
+# implementation plan that adds them (coverage, no-heap and baremetal in phase 2, sanitize and lto
+# in phase 5, fetchcontent-online in phase 6).
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/ci/apt_install.sh build-essential cmake ninja-build clang-format
+      - name: format
+        run: find include src test examples -name '*.[ch]' -print0 | xargs -0 clang-format --dry-run --Werror
+      - name: no-heap grep (NH-03)
+        run: scripts/check_no_heap.sh --grep-only
+      - name: build default (tests compiled, not run)
+        run: scripts/ci/build_one.sh --no-test host default Debug
+
+  host:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'gcc 15 (ubuntu 26.04)',   container: 'ubuntu:26.04', cc: gcc,   packages: 'build-essential cmake ninja-build' }
+          - { name: 'clang 21 (ubuntu 26.04)', container: 'ubuntu:26.04', cc: clang, packages: 'clang lld cmake ninja-build' }
+          - { name: 'gcc 13 (ubuntu 24.04)',   container: 'ubuntu:24.04', cc: gcc,   packages: 'build-essential cmake ninja-build' }
+          - { name: 'clang 18 (ubuntu 24.04)', container: 'ubuntu:24.04', cc: clang, packages: 'clang lld cmake ninja-build' }
+          - { name: 'gcc 11 (ubuntu 22.04)',   container: 'ubuntu:22.04', cc: gcc,   packages: 'build-essential cmake ninja-build' }
+          - { name: 'clang 14 (ubuntu 22.04)', container: 'ubuntu:22.04', cc: clang, packages: 'clang lld cmake ninja-build' }
+          - { name: 'gcc 15 -m32 (ubuntu 26.04)', container: 'ubuntu:26.04', selector: host-gcc-m32,
+              packages: 'build-essential gcc-multilib cmake ninja-build', optconfigs: 'default', optbuildtypes: 'Release' }
+    uses: ./.github/workflows/_target.yml
+    with:
+      name: ${{ matrix.name }}
+      container: ${{ matrix.container }}
+      packages: ${{ matrix.packages }}
+      selector: ${{ matrix.selector || 'host' }}
+      cc: ${{ matrix.cc || '' }}
+      optconfigs: ${{ matrix.optconfigs || 'default debug nochecks' }}
+      optbuildtypes: ${{ matrix.optbuildtypes || 'Release MinSizeRel' }}
+
+  emulated:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'aarch64 (qemu)',               selector: aarch64, packages: 'gcc-aarch64-linux-gnu', libc: arm64 }
+          - { name: 'armhf (qemu)',                 selector: armhf,   packages: 'gcc-arm-linux-gnueabihf', libc: armhf }
+          - { name: 'riscv64 (qemu)',               selector: riscv64, packages: 'gcc-riscv64-linux-gnu', libc: riscv64 }
+          - { name: 'powerpc (qemu, big-endian)',   selector: powerpc, packages: 'gcc-powerpc-linux-gnu', libc: powerpc }
+          - { name: 's390x (qemu, big-endian)',     selector: s390x,   packages: 'gcc-s390x-linux-gnu', libc: s390x }
+    uses: ./.github/workflows/_target.yml
+    with:
+      name: ${{ matrix.name }}
+      container: 'ubuntu:26.04'
+      packages: ${{ matrix.packages }} qemu-user libc6-dev-${{ matrix.libc }}-cross cmake ninja-build
+      selector: ${{ matrix.selector }}
+      optconfigs: 'default nochecks'
+      optbuildtypes: 'MinSizeRel'
+      symbols: true
+      timeout-minutes: 30
+
+  baremetal:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'arm-none-eabi-gcc', family: arm-gcc,
+              packages: 'gcc-arm-none-eabi libnewlib-arm-none-eabi binutils-arm-none-eabi' }
+          - { name: 'clang (thumbv6m, thumbv7m, rv32imac)', family: clang,
+              packages: 'clang lld llvm binutils-arm-none-eabi binutils-riscv64-unknown-elf libnewlib-arm-none-eabi picolibc-riscv64-unknown-elf' }
+          - { name: 'riscv64-unknown-elf-gcc', family: riscv-gcc,
+              packages: 'gcc-riscv64-unknown-elf picolibc-riscv64-unknown-elf' }
+          - { name: 'avr-gcc', family: avr-gcc,
+              packages: 'gcc-avr binutils-avr avr-libc' }
+    uses: ./.github/workflows/_target.yml
+    with:
+      name: ${{ matrix.name }}
+      container: 'ubuntu:26.04'
+      packages: ${{ matrix.packages }}
+      selector: family:${{ matrix.family }}
+      configs: 'default debug nochecks wide noalign bigalign'
+      optconfigs: ''
+      size: true
+      timeout-minutes: 20
+
+  coverage:
+    needs: gate
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - id: install
+        run: scripts/ci/apt_install.sh build-essential cmake ninja-build gcovr
+      - { name: default,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh default }
+      - { name: debug,    if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh debug }
+      - { name: nochecks, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh nochecks }
+      - { name: wide,     if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh wide }
+      - { name: noalign,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh noalign }
+      - { name: bigalign, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/coverage.sh bigalign }
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with: { name: coverage-html, path: build/coverage/ }
+
+  sanitize:
+    needs: gate
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: install
+        run: scripts/ci/apt_install.sh build-essential clang libclang-rt-dev cmake ninja-build
+      - { name: default,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: 'scripts/sanitize.sh --cc "$CC" default' }
+      - { name: debug,    if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: 'scripts/sanitize.sh --cc "$CC" debug' }
+      - { name: nochecks, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: 'scripts/sanitize.sh --cc "$CC" nochecks' }
+      - { name: wide,     if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: 'scripts/sanitize.sh --cc "$CC" wide' }
+      - { name: noalign,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: 'scripts/sanitize.sh --cc "$CC" noalign' }
+      - { name: bigalign, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: 'scripts/sanitize.sh --cc "$CC" bigalign' }
+      - name: pthread (TSan)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && matrix.cc == 'clang' }}
+        run: scripts/sanitize.sh --cc clang --tsan pthread
+
+  lto:
+    needs: gate
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: install
+        run: scripts/ci/apt_install.sh build-essential clang lld llvm cmake ninja-build
+      - { name: default,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/ci/build_one.sh --lto host default Release }
+      - { name: debug,    if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/ci/build_one.sh --lto host debug Release }
+      - { name: nochecks, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/ci/build_one.sh --lto host nochecks Release }
+
+  no-heap:
+    needs: gate
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/ci/apt_install.sh build-essential clang cmake ninja-build
+      - run: scripts/check_no_heap.sh
+
+  fetchcontent:
+    needs: gate
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - id: install
+        run: >-
+          scripts/ci/apt_install.sh build-essential cmake ninja-build make python3-venv
+          gcc-arm-none-eabi libnewlib-arm-none-eabi
+      - { name: basic,         if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh basic }
+      - { name: config-normal, if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh config-normal }
+      - { name: config-cache,  if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh config-cache }
+      - { name: mismatch,      if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh mismatch }
+      - { name: cstd,          if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh cstd }
+      - { name: generators,    if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh generators }
+      - { name: cmake-floor,   if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh cmake-floor }
+      - { name: baremetal,     if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh baremetal }
+      - { name: docs,          if: "${{ !cancelled() && steps.install.outcome == 'success' }}", run: scripts/fetchcontent_smoke.sh docs }   # skips until phase 7 writes the README block
+
+  fetchcontent-online:
+    needs: gate
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/ci/apt_install.sh build-essential cmake ninja-build
+      - run: scripts/fetchcontent_smoke.sh online
+        env:
+          BLOC_GIT_TAG: ${{ github.sha }}
+
+  ci-ok:
+    if: always()
+    # Final state after phase 6: [gate, host, emulated, baremetal, coverage, sanitize, lto, no-heap,
+    # fetchcontent, fetchcontent-online]. Phase 0 requires only the jobs below.
+    needs: [gate, host, emulated, fetchcontent]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: every required job succeeded
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
+      - run: echo "all required jobs passed (skipped jobs are allowed, e.g. fetchcontent-online on pull requests)"
