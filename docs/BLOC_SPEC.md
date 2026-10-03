@@ -209,17 +209,19 @@ All options have defaults in `bloc_opt.h`, guarded by `#ifndef`. A project overr
 
 ### Assertion handler
 
-As in lwIP (`LWIP_PLATFORM_ASSERT`), the configurable hook receives a message and is called only when an assertion has already failed. BLOC evaluates the condition itself. The default does not touch the C library:
+As in lwIP (`LWIP_PLATFORM_ASSERT`), the configurable hook receives a message and is called only when an assertion has already failed. BLOC evaluates the condition itself. The default does not touch the C library: it traps where the compiler has a trap instruction, and otherwise halts in an infinite loop (a watchdog, if any, then resets the system):
 
 ```c
 #ifndef BLOC_PLATFORM_ASSERT
-#  if defined(__GNUC__) || defined(__clang__)
+#  if (defined(__GNUC__) || defined(__clang__)) && !defined(__AVR__)
 #    define BLOC_PLATFORM_ASSERT(msg)  do { (void)(msg); __builtin_trap(); } while (0)
 #  else
 #    define BLOC_PLATFORM_ASSERT(msg)  do { (void)(msg); for (;;) { } } while (0)
 #  endif
 #endif
 ```
+
+AVR is excluded from the trap variant because it has no trap instruction: avr-gcc compiles `__builtin_trap()` to a call to `abort()` from the C library, and the AVR `BREAK` instruction is a no-op without a debugger. The infinite loop is plain C and halts on every target.
 
 An application may route it to its own fault handler, logger or breakpoint. If the hook returns, BLOC continues as described in section 13.
 
@@ -775,4 +777,4 @@ All 26 findings of the first review are resolved; four were design decisions by 
 | 2 | 2026-10-03 | Review resolved (Appendix B), API revised (section 15) |
 | 3 | 2026-10-03 | No-heap and libc dependency rules (section 2); `BLOC_ASSERT(x)` replaced by lwIP-style `BLOC_PLATFORM_ASSERT(msg)` with a libc-free trapping default; `BLOC_DEBUG` requires `BLOC_CHECKS`; exact static-assert messages; `BLOC_ELEMENT_SIZE_MAX` and `*_MAX` constants; pool unchanged on failed init; bail/continue semantics after a returning assertion; handle-validity steps and check order; asserts never under lock; runtime invariant assert reduced to the O(1) one; header split into `bloc.h` and `bloc_opt.h` |
 | 4 | 2026-10-03 | Code-size requirement with `.text` budgets for ARMv6-M and ARMv7-M (section 17); no compiler runtime helpers without `BLOC_DEBUG` (section 2); `bloc_pool_init` size check without division (section 7) |
-| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002); the headroom check of `bloc_alloc` must not overflow (section 8, OQ-003) |
+| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002); the headroom check of `bloc_alloc` must not overflow (section 8, OQ-003); the default assertion halts in an infinite loop on AVR, where `__builtin_trap()` would call `abort()` (section 6, OQ-004) |

@@ -99,6 +99,10 @@ the interpretation that was chosen and the tests it affects.
 - **Tests affected:** XC-02, XC-03 (all AVR debug rows, cm0plus/cm3 Clang rows), EM-03 (armhf,
   powerpc), NH-02. Phase 4 must check whether Clang also needs `-fno-builtin-memcpy`
   (`__aeabi_memcpy`) once `memcpy` is used.
+- **Resolution of (2) (2026-10-03):** confirmed by the owner. Spec section 6 (revision 5) now shows
+  the AVR exclusion in the default assertion and explains it: avr-gcc turns `__builtin_trap()` into
+  a call to `abort()`, and `BREAK` is a no-op without a debugger. `src/include/bloc_opt.h` already
+  matched. (1), (4) and (5) need only plan updates; (3) awaits the owner's decision.
 
 ## OQ-005 Deviations from the literal text of the plan in phase 2
 
