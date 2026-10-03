@@ -25,7 +25,7 @@ This plan tells an implementing agent exactly what to build, in which order, and
 | ID | Rule |
 | --- | --- |
 | R-01 | BLOC never allocates memory. No `malloc`, `calloc`, `realloc`, `free`, `aligned_alloc`, `memmove`, `alloca`, VLAs. |
-| R-02 | `src/` and `include/` may include only `<stddef.h>`, `<stdint.h>`, `<stdbool.h>`, `<string.h>`. Never `<stdlib.h>`, `<stdio.h>`, `<assert.h>`. |
+| R-02 | `src/` (library sources and the public headers in `src/include/`) may include only `<stddef.h>`, `<stdint.h>`, `<stdbool.h>`, `<string.h>`. Never `<stdlib.h>`, `<stdio.h>`, `<assert.h>`. |
 | R-03 | The only C library symbols the compiled library may reference are `memcpy` and `memset`. With `BLOC_DEBUG = 0` it must not reference any compiler runtime helper (libgcc, compiler-rt) on any target in section 3.6. With `BLOC_DEBUG = 1` it may additionally reference the target's unsigned division and modulo helpers (spec section 2). |
 | R-04 | Pure C11 (`-std=c11`), no compiler extensions except `__builtin_trap` inside the guarded default of `BLOC_PLATFORM_ASSERT`. Compiler- or target-specific code (inline assembly, intrinsics) is allowed only in `test/` and in configuration headers. |
 | R-05 | No recursion, no floating point, no function-local `static` variables, no global mutable state in `src/`. |
@@ -77,11 +77,12 @@ bloc/
 │   ├── BLOC_SPEC.md               specification (existing)
 │   ├── IMPLEMENTATION_PLAN.md     this file
 │   └── OPEN_QUESTIONS.md          only if needed (section 1.3)
-├── include/
-│   ├── bloc.h                     public API, types, layout macros
-│   └── bloc_opt.h                 configuration defaults and compile-time validation
-├── src/
-│   └── bloc.c                     the whole implementation
+├── src/                           the library: the only directory a consumer needs (section 3.8)
+│   ├── CMakeLists.txt             library target bloc / bloc::bloc, no project()
+│   ├── bloc.c                     the whole implementation
+│   └── include/
+│       ├── bloc.h                 public API, types, layout macros
+│       └── bloc_opt.h             configuration defaults and compile-time validation
 ├── examples/
 │   ├── basic.c                    alloc / append / prepend / release example
 │   └── bloc_opts_example.h        example project configuration header
@@ -177,7 +178,7 @@ The host compiler is chosen with the preset (`CMAKE_C_COMPILER`), not with an op
 
 Targets:
 
-- `bloc` — the only target defined when BLOC is consumed: static library from `src/bloc.c`, public include dir `include/`, alias `bloc::bloc`. Rules in section 3.8.
+- `bloc` — the only target defined when BLOC is consumed: static library from `src/bloc.c`, defined in `src/CMakeLists.txt`, public include dir `src/include/`, alias `bloc::bloc`. Rules in section 3.8.
 - `bloc_test_support` — static library from `test/support/*.c` (tests only).
 - one executable per `test/test_*.c`, each linking `bloc::bloc`, `bloc_test_support` and `unity`, each registered with `add_test` (tests only).
 - `compile_fail_*` targets (section 8.1, tests only).
@@ -233,7 +234,7 @@ Why so many rows: each one catches a class of bugs the others cannot. Older comp
 
 Tier-1E details: each target has a CMake toolchain file `cmake/toolchains/linux-<arch>.cmake` that sets `CMAKE_SYSTEM_NAME Linux`, `CMAKE_SYSTEM_PROCESSOR`, `CMAKE_C_COMPILER <triple>-gcc`, `CMAKE_EXE_LINKER_FLAGS_INIT -static` and `CMAKE_CROSSCOMPILING_EMULATOR qemu-<arch>` (`qemu-aarch64`, `qemu-arm`, `qemu-riscv64`, `qemu-ppc`, `qemu-s390x`; these binaries are statically linked, so the name has no `-static` suffix on Ubuntu 26.04). With static linking and an explicit emulator, `ctest` runs the binaries without a sysroot and without `binfmt_misc`, which a CI container cannot register. If a package name differs on the CI image, keep the target's properties (word size, endianness) and record the substitution in `docs/OPEN_QUESTIONS.md`.
 
-**Non-goals.** macOS (AppleClang, Mach-O) and Windows are not supported or tested in V1 and have no priority. They may be considered after every other item in this plan is done. Nothing in `src/` or `include/` may prevent such a port, but no job, test or script is spent on it.
+**Non-goals.** macOS (AppleClang, Mach-O) and Windows are not supported or tested in V1 and have no priority. They may be considered after every other item in this plan is done. Nothing in `src/` may prevent such a port, but no job, test or script is spent on it.
 
 Tier-2 configurations: every test configuration except `pthread`. AVR also excludes `wide`, which must fail there with the expected message (XC-04). Test configuration headers, and the support headers they include, must therefore compile freestanding: they may only include the headers allowed by R-02.
 
@@ -246,7 +247,12 @@ Tier-2 configurations: every test configuration except `pthread`. AVR also exclu
 
 ### 3.8 CMake project rules and consumption by other projects (R-10)
 
-BLOC is meant to be pulled into firmware and host projects with a few lines of CMake. The top-level `CMakeLists.txt` is therefore written for two audiences: BLOC's own developers and CI (top-level build, everything enabled), and consumers (subproject build, exactly one library target, no side effects).
+BLOC is meant to be pulled into firmware and host projects with a few lines of CMake. The library and its build description therefore live together in `src/`, separate from everything else:
+
+- `src/CMakeLists.txt` is the **library**: it defines the target `bloc` (STATIC) with the alias `bloc::bloc` and the `BLOC_*` configuration entries, and nothing else. It calls `cmake_minimum_required` but no `project()`, adds no tests, fetches nothing and sets no global state. This file is what consumers add.
+- The top-level `CMakeLists.txt` is the **development project** for BLOC's own developers and CI: `project(bloc VERSION X.Y.Z)`, `add_subdirectory(src)`, then the test-only options (`BLOC_TEST_CONFIG`, `BLOC_COVERAGE`, `BLOC_SANITIZE`, `BLOC_LTO`), instrumentation, tests and examples. It sets `BLOC_WERROR` to `ON` as a normal variable before `add_subdirectory(src)`, so warnings are errors in BLOC's own build while consumers get the option's default `OFF`. If a consumer adds the repository root instead of `src/`, the top-level file detects that it is not the top-level project and only adds `src/`.
+
+Because the consumable unit declares no `project()`, adding it creates neither `bloc_*` cache entries nor CMake's `CMAKE_PROJECT_VERSION*` entries in the consumer (OQ-001).
 
 #### Supported consumption
 
@@ -256,7 +262,8 @@ include(FetchContent)
 FetchContent_Declare(bloc
   GIT_REPOSITORY https://github.com/Andste82/bloc.git
   GIT_TAG        ${BLOC_GIT_TAG}   # a release tag such as v1.0.0, or a full commit hash
-  GIT_SHALLOW    ${BLOC_GIT_SHALLOW})
+  GIT_SHALLOW    ${BLOC_GIT_SHALLOW}
+  SOURCE_SUBDIR  src)               # the library only: no project, no tests
 # optional project configuration (spec section 6):
 # set(BLOC_CONFIG_HEADER "bloc_opts.h")
 # set(BLOC_CONFIG_DIRS   "${CMAKE_CURRENT_SOURCE_DIR}/config")
@@ -266,86 +273,30 @@ FetchContent_MakeAvailable(bloc)
 target_link_libraries(my_app PRIVATE bloc::bloc)
 ```
 
-In the README the two variables are replaced by literal values (`v1.0.0`, `TRUE`); the FC-10 check compares the blocks after that substitution. `add_subdirectory(path/to/bloc)` works the same way (FetchContent uses it internally) and is documented in one sentence. To test a local checkout without network access, consumers and CI use CMake's standard override `-DFETCHCONTENT_SOURCE_DIR_BLOC=/path/to/bloc`; the consumer's `CMakeLists.txt` stays unchanged.
+In the README the two variables are replaced by literal values (`v1.0.0`, `TRUE`); the FC-10 check compares the blocks after that substitution. `SOURCE_SUBDIR` needs CMake 3.18, below the floor of 3.20. `add_subdirectory(path/to/bloc/src bloc)` works the same way and is documented in one sentence. To test a local checkout without network access, consumers and CI use CMake's standard override `-DFETCHCONTENT_SOURCE_DIR_BLOC=/path/to/bloc`; the consumer's `CMakeLists.txt` stays unchanged.
 
-#### Top-level `CMakeLists.txt` skeleton
-
-```cmake
-cmake_minimum_required(VERSION 3.20...4.2)
-project(bloc VERSION 1.0.0 LANGUAGES C)       # C only: consumers need no C++ compiler
-
-# PROJECT_IS_TOP_LEVEL needs CMake 3.21; the floor is 3.20, so detect it directly.
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  set(BLOC_IS_TOP_LEVEL ON)
-else()
-  set(BLOC_IS_TOP_LEVEL OFF)
-endif()
-
-option(BLOC_BUILD_TESTS    "Build the BLOC unit tests"               ${BLOC_IS_TOP_LEVEL})
-option(BLOC_BUILD_EXAMPLES "Build the BLOC examples"                 ${BLOC_IS_TOP_LEVEL})
-option(BLOC_WERROR         "Treat warnings in BLOC sources as errors" ${BLOC_IS_TOP_LEVEL})
-
-# Guarded so that a consumer's normal variable wins on the first configure too.
-# (Under CMake 3.20, policy CMP0126 does not exist and set(CACHE) would hide it.)
-if(NOT DEFINED BLOC_CONFIG_HEADER)
-  set(BLOC_CONFIG_HEADER "" CACHE STRING "BLOC project configuration header, e.g. bloc_opts.h")
-endif()
-if(NOT DEFINED BLOC_CONFIG_DIRS)
-  set(BLOC_CONFIG_DIRS "" CACHE STRING "Absolute include directories containing BLOC_CONFIG_HEADER")
-endif()
-
-if(BLOC_IS_TOP_LEVEL)
-  # BLOC_TEST_CONFIG, BLOC_COVERAGE, BLOC_SANITIZE, BLOC_LTO are defined here only;
-  # BLOC_TEST_CONFIG maps onto BLOC_CONFIG_HEADER / BLOC_CONFIG_DIRS (section 3.2).
-endif()
-
-add_library(bloc STATIC src/bloc.c)
-add_library(bloc::bloc ALIAS bloc)
-target_include_directories(bloc PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
-target_compile_features(bloc PUBLIC c_std_11)
-set_target_properties(bloc PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
-if(BLOC_CONFIG_HEADER)
-  # check every BLOC_CONFIG_DIRS entry with IS_ABSOLUTE, FATAL_ERROR otherwise
-  target_compile_definitions(bloc PUBLIC "BLOC_CONFIG_HEADER=\"${BLOC_CONFIG_HEADER}\"")
-  target_include_directories(bloc PUBLIC ${BLOC_CONFIG_DIRS})
-endif()
-target_compile_options(bloc PRIVATE
-  $<$<C_COMPILER_ID:GNU,Clang>:<library warning flags of section 3.3>>
-  $<$<C_COMPILER_ID:GNU>:-Wcast-align=strict>
-  $<$<AND:$<BOOL:${BLOC_WERROR}>,$<C_COMPILER_ID:GNU,Clang>>:-Werror>)
-
-if(BLOC_BUILD_TESTS)
-  if(NOT BLOC_IS_TOP_LEVEL)
-    message(FATAL_ERROR "BLOC tests can only be built when BLOC is the top-level project")
-  endif()
-  enable_testing()
-  add_subdirectory(test)          # Unity is fetched in here, never above
-endif()
-if(BLOC_BUILD_EXAMPLES)
-  add_subdirectory(examples)
-endif()
-```
+The files `src/CMakeLists.txt` and `CMakeLists.txt` are the reference for the details; the rules below are what they must keep true.
 
 #### Rules
 
 | ID | Rule |
 | --- | --- |
-| CM-01 | The consumer-visible result of `FetchContent_MakeAvailable(bloc)` with default options is exactly one buildable target, `bloc` (STATIC), with the alias `bloc::bloc`. No other targets, no subdirectories, no tests, no Unity download. Consumers link `bloc::bloc`. |
-| CM-02 | Usage requirements of `bloc` are exactly: the `include/` directory (`BUILD_INTERFACE`), the compile feature `c_std_11`, and, if configured, the `BLOC_CONFIG_HEADER` definition plus `BLOC_CONFIG_DIRS`. `INTERFACE_LINK_LIBRARIES` and `INTERFACE_COMPILE_OPTIONS` are empty: warning, coverage, sanitizer and LTO flags are PRIVATE or test-only and never reach the consumer. |
+| CM-01 | The consumer-visible result of `FetchContent_MakeAvailable(bloc)` (with `SOURCE_SUBDIR src`) with default options is exactly one buildable target, `bloc` (STATIC), with the alias `bloc::bloc`. No other targets, no subdirectories, no tests, no Unity download. Consumers link `bloc::bloc`. |
+| CM-02 | Usage requirements of `bloc` are exactly: the `src/include/` directory (`BUILD_INTERFACE`), the compile feature `c_std_11`, and, if configured, the `BLOC_CONFIG_HEADER` definition plus `BLOC_CONFIG_DIRS`. `INTERFACE_LINK_LIBRARIES` and `INTERFACE_COMPILE_OPTIONS` are empty: warning, coverage, sanitizer and LTO flags are PRIVATE or test-only and never reach the consumer. |
 | CM-03 | No global side effects. BLOC's CMake code never calls `add_compile_options`, `add_link_options`, `add_definitions`, `include_directories`, `link_libraries` or `include(CTest)`, never sets `CMAKE_C_FLAGS*`, `CMAKE_C_STANDARD`, `CMAKE_BUILD_TYPE`, `CMAKE_*_OUTPUT_DIRECTORY` or `CMAKE_POSITION_INDEPENDENT_CODE`, and never writes `PARENT_SCOPE` variables. All flags are set per target. |
-| CM-04 | Namespace hygiene. Cache entries created by BLOC start with `BLOC_` (plus the `bloc_*` entries that `project()` creates). Test-only options (`BLOC_TEST_CONFIG`, `BLOC_COVERAGE`, `BLOC_SANITIZE`, `BLOC_LTO`) exist only in a top-level build. |
-| CM-05 | Location independence. Inside BLOC's CMake files, paths are built from `CMAKE_CURRENT_SOURCE_DIR`, `CMAKE_CURRENT_BINARY_DIR` or `bloc_SOURCE_DIR`; `CMAKE_SOURCE_DIR` and `CMAKE_BINARY_DIR` appear only in the top-level detection. |
+| CM-04 | Namespace hygiene. Cache entries created by `src/CMakeLists.txt` start with `BLOC_`; it calls no `project()`, so there are no `bloc_*` or `CMAKE_PROJECT_VERSION*` entries. Test-only options (`BLOC_TEST_CONFIG`, `BLOC_COVERAGE`, `BLOC_SANITIZE`, `BLOC_LTO`) exist only in a top-level build. |
+| CM-05 | Location independence. Inside BLOC's CMake files, paths are built from `CMAKE_CURRENT_SOURCE_DIR` or `CMAKE_CURRENT_BINARY_DIR` (`src/CMakeLists.txt` uses only these), or `bloc_SOURCE_DIR` in the top-level file; `CMAKE_SOURCE_DIR` and `CMAKE_BINARY_DIR` appear only in the top-level detection. |
 | CM-06 | Configuration consistency (no ODR split). The project configuration header is applied to the `bloc` target as a PUBLIC definition, never to the consumer's target alone, so the library and every consumer translation unit see the same `struct bloc_handle`, `struct bloc_pool` and layout macros. A consumer that defines `BLOC_CONFIG_HEADER` only on its own target gets a silently mismatched layout; FC-04 proves the smoke test detects exactly that. |
 | CM-07 | The library compiles as C11 regardless of the consumer's `CMAKE_C_STANDARD` (target property `C_STANDARD 11`). The public headers must also compile in consumer translation units built as C11, C17 and C23 with strict warnings (FC-05). |
 | CM-08 | Portable configure. No `try_run`, no `check_*_runs`, no `find_package`, no `CMAKE_BUILD_TYPE` checks (multi-config generators must work), no network access unless `BLOC_BUILD_TESTS` is on. Configuring with a bare-metal toolchain file (`CMAKE_SYSTEM_NAME Generic`, `CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY`) and with compilers other than GCC/Clang must work; unknown compilers simply get no warning flags. |
-| CM-09 | Versioning. `project(bloc VERSION X.Y.Z)` matches the release tag `vX.Y.Z`. Consumers are told to pin a tag or a full commit hash, never a branch. |
+| CM-09 | Versioning. `project(bloc VERSION X.Y.Z)` in the top-level `CMakeLists.txt` and `BLOC_VERSION_MAJOR/MINOR/PATCH` in `bloc.h` match the release tag `vX.Y.Z`. Consumers are told to pin a tag or a full commit hash, never a branch. |
 | CM-10 | Out of scope for V1: `install()`, `export()`, a package config for `find_package(bloc)`, and shared-library builds. `bloc` is always STATIC and ignores `BUILD_SHARED_LIBS`. If a consumer needs position-independent code, they set `CMAKE_POSITION_INDEPENDENT_CODE` in their own project, which reaches `bloc` like any other target. |
 
 ---
 
 ## 4. Code architecture
 
-### 4.1 `include/bloc_opt.h`
+### 4.1 `src/include/bloc_opt.h`
 
 Contents, in this order:
 
@@ -357,7 +308,7 @@ Contents, in this order:
    - `#if BLOC_THREAD_SAFE && !(defined(BLOC_DECL_PROTECT) && defined(BLOC_PROTECT) && defined(BLOC_UNPROTECT))` → `#error "BLOC_THREAD_SAFE requires BLOC_DECL_PROTECT, BLOC_PROTECT and BLOC_UNPROTECT"`.
 5. `_Static_assert`s for the other rules in spec section 6 with the exact messages. Use a helper `#define BLOC_IS_POW2(x) ((x) != 0 && (((x) & ((x) - 1)) == 0))`.
 
-### 4.2 `include/bloc.h`
+### 4.2 `src/include/bloc.h`
 
 Contents, in this order:
 
@@ -914,7 +865,7 @@ Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake tar
 | --- | --- |
 | NH-01 | Host check (the cross-target equivalent is XC-02). Build the library in release mode (`-O2`, no coverage, no sanitizers, `-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0`; Ubuntu's GCC enables fortification by default, which would turn `memcpy` into `__memcpy_chk`) for configurations `default` and `debug`. Run `nm -u` on the object file. The set of undefined symbols must be a subset of `{memcpy, memset}` (plus the test hooks `ts_assert_fail`, `ts_lock_enter`, `ts_lock_exit` in `debug`). Any other symbol fails the check, and the script prints it. |
 | NH-02 | Same check for a `debug` build that uses the **default** `BLOC_PLATFORM_ASSERT` (no test hook): undefined symbols ⊆ `{memcpy, memset}`. This proves the trapping default needs no C library. |
-| NH-03 | `grep` over `src/` and `include/` finds no `#include` other than `bloc.h`, `bloc_opt.h`, `<stddef.h>`, `<stdint.h>`, `<stdbool.h>`, `<string.h>`, and no occurrence of `malloc`, `calloc`, `realloc`, `aligned_alloc`, `free(`, `memmove`, `alloca` (not even in comments, so the check stays a plain grep; `bloc_calloc` is matched as a whole word and allowed). |
+| NH-03 | `grep` over the C sources and headers in `src/` finds no `#include` other than `bloc.h`, `bloc_opt.h`, `<stddef.h>`, `<stdint.h>`, `<stdbool.h>`, `<string.h>`, and no occurrence of `malloc`, `calloc`, `realloc`, `aligned_alloc`, `free(`, `memmove`, `alloca` (not even in comments, so the check stays a plain grep; `bloc_calloc` is matched as a whole word and allowed). |
 
 ### 9.2 Sanitizers (`scripts/sanitize.sh`)
 
@@ -1003,7 +954,7 @@ Rationale: storage is a `uint8_t` array that the library accesses through `struc
 | ID | Variant | Requirement |
 | --- | --- | --- |
 | FC-01 | `basic` | Fresh configure, build and `ctest` of the smoke project with no BLOC options set: `smoke` passes. Proves that consumption works and that the public headers are warning-free under the consumer's strict flags. |
-| FC-02 | (all variants) | Hygiene, asserted at configure time in the smoke `CMakeLists.txt` with `FATAL_ERROR`: the `BUILDSYSTEM_TARGETS` directory property of `bloc_SOURCE_DIR` is exactly `bloc`, and its `SUBDIRECTORIES` property is empty; `TARGET unity` is false, and `FetchContent_GetProperties(unity)` reports it as not populated; `INTERFACE_LINK_LIBRARIES` and `INTERFACE_COMPILE_OPTIONS` of `bloc` are empty; `COMPILE_OPTIONS` of `bloc` contain none of `-Werror`, `--coverage`, `-fsanitize`, `-flto`; cache entries that are new after `FetchContent_MakeAvailable` all match `^(BLOC_|bloc_|FETCHCONTENT_)`, and `BLOC_TEST_CONFIG`, `BLOC_COVERAGE`, `BLOC_SANITIZE`, `BLOC_LTO` are not defined; `CMAKE_C_FLAGS` and the consumer root directory's `COMPILE_OPTIONS`, `COMPILE_DEFINITIONS` and `INCLUDE_DIRECTORIES` are unchanged. After the build, the script checks that `ctest -N` lists exactly the smoke tests. (CM-01..05) |
+| FC-02 | (all variants) | Hygiene, asserted at configure time in the smoke `CMakeLists.txt` with `FATAL_ERROR`: the `BUILDSYSTEM_TARGETS` directory property of `${bloc_SOURCE_DIR}/src` is exactly `bloc`, and its `SUBDIRECTORIES` property is empty; `TARGET unity` is false, and `FetchContent_GetProperties(unity)` reports it as not populated; `INTERFACE_LINK_LIBRARIES` and `INTERFACE_COMPILE_OPTIONS` of `bloc` are empty; `COMPILE_OPTIONS` of `bloc` contain none of `-Werror`, `--coverage`, `-fsanitize`, `-flto`; cache entries that are new after `FetchContent_MakeAvailable` all match `^(BLOC_|FETCHCONTENT_)`, except `GIT_EXECUTABLE`, which FetchContent itself creates when it downloads with git (FC-09), and `BLOC_TEST_CONFIG`, `BLOC_COVERAGE`, `BLOC_SANITIZE`, `BLOC_LTO` are not defined; `CMAKE_C_FLAGS` and the consumer root directory's `COMPILE_OPTIONS`, `COMPILE_DEFINITIONS` and `INCLUDE_DIRECTORIES` are unchanged. After the build, the script checks that `ctest -N` lists exactly the smoke tests. (CM-01..05) |
 | FC-03 | `config-normal`, `config-cache` | The consumer sets `BLOC_CONFIG_HEADER=smoke_opts.h` and `BLOC_CONFIG_DIRS=${CMAKE_CURRENT_SOURCE_DIR}/config`, once as normal variables and once as cache variables, before `FetchContent_MakeAvailable`. Each variant is configured twice (fresh, then reconfigure) and must produce the same result: `smoke` passes, which by check 2 proves the library and consumer share the configuration, and `INTERFACE_COMPILE_DEFINITIONS` of `bloc` is exactly `BLOC_CONFIG_HEADER="smoke_opts.h"`. A third run with a relative `BLOC_CONFIG_DIRS` must fail to configure with the documented message. (CM-06) |
 | FC-04 | `mismatch` | Sensitivity of the ODR detector. A second executable `smoke_mismatch` is built from the same `main.c` against the default-configured library, but with `BLOC_CONFIG_HEADER` and the config include directory added only to the executable. It is registered with `WILL_FAIL TRUE`, so `ctest` passes only if check 2 detects the mismatch. |
 | FC-05 | `cstd` | The consumer sets `CMAKE_C_STANDARD` to 11, 17 and 23 (three configures); `main.c` builds warning-free with each, and `compile_commands.json` shows the `bloc` sources still compiled with `-std=c11`. (CM-07) |
@@ -1041,7 +992,7 @@ Triggers: `push` to `main` and tags `v*`, `pull_request` to `main`, `workflow_di
 
 | Stage | Job (display name) | Image | Cells | Steps | Tests |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `lint` | `ubuntu:26.04` | – | clang-format check over `include/ src/ test/ examples/`; shellcheck over `scripts/`; `check_no_heap.sh --grep-only` | NH-03, format |
+| 1 | `lint` | `ubuntu:26.04` | – | clang-format check over `src/ test/ examples/`; shellcheck over `scripts/`; `check_no_heap.sh --grep-only` | NH-03, format |
 | 2 | `coverage` | `ubuntu:26.04` | – | one step per coverage-gated configuration: `scripts/coverage.sh <cfg>`; upload HTML reports | Q-01, CC-01 (GCC) |
 | 2 | `sanitize / <cc>` | `ubuntu:26.04` | `gcc`, `clang` | one step per coverage-gated configuration with ASan+UBSan; `clang` adds the TSan `pthread` step | SAN-01..03, CC-01 |
 | 2 | `no-heap` | `ubuntu:26.04` | – | `scripts/check_no_heap.sh` | NH-01..02 |
@@ -1117,7 +1068,7 @@ Work:
 - `test/fetchcontent_smoke/` with the full `CMakeLists.txt` (FetchContent block and FC-02 assertions), `config/smoke_opts.h`, the bare-metal toolchain file, and a `main.c` that for now only uses compile-time macros (e.g. `_Static_assert(BLOC_POOL_SIZE(4, 64) > 0, "")`) and returns 0; `scripts/fetchcontent_smoke.sh` with all variants.
 - Test support library (section 5) complete, with its own self-tests (`test_support.c`: guard band detection, assertion bookkeeping, lock tracer errors).
 - All seven `test/configs/cfg_*.h`.
-- Stub `include/bloc.h`, `include/bloc_opt.h` and `src/bloc.c`. An empty translation unit is not valid ISO C under `-Wpedantic`, so the stub `bloc.c` contains one internal declaration, e.g. `typedef int bloc_i_translation_unit_not_empty;`.
+- Stub `src/include/bloc.h`, `src/include/bloc_opt.h`, `src/bloc.c` and `src/CMakeLists.txt`. An empty translation unit is not valid ISO C under `-Wpedantic`, so the stub `bloc.c` contains one internal declaration, e.g. `typedef int bloc_i_translation_unit_not_empty;`.
 - `scripts/*.sh` skeletons, including `cross_check.sh` (loop over the bare-metal targets of `target_table.sh`) and `check_size.sh` (report only). Also `.clang-format`, `.github/workflows/ci.yml` and `.github/actions/target/action.yml` with every job of section 10.2. Jobs whose tests do not exist yet run but are informational (not in `ci-ok.needs`) until their phase. The footprint step is informational until phase 4.
 
 DoD: `ctest` runs `test_support` green in all configurations with GCC and Clang, on the 32-bit host and on every tier-1E target (EM-04 passes, so each emulated job runs the right architecture); `cross_check.sh` compiles the stub `bloc.c` for every tier-2 target; FC-02, FC-06, FC-07 and FC-08 pass with the macro-only `main.c`; the CI pipeline runs end to end, and `ci-ok` is green.

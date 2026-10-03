@@ -34,7 +34,7 @@ jobs:
         run: scripts/ci/apt_install.sh clang-format shellcheck
       - name: format
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: find include src test examples -name '*.[ch]' -print0 | xargs -0 clang-format --dry-run --Werror
+        run: find src test examples -name '*.[ch]' -print0 | xargs -0 clang-format --dry-run --Werror
       - name: shellcheck
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: shellcheck -x scripts/*.sh scripts/ci/*.sh

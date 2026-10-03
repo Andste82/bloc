@@ -38,7 +38,8 @@ include(FetchContent)
 FetchContent_Declare(bloc
   GIT_REPOSITORY https://github.com/Andste82/bloc.git
   GIT_TAG        ${BLOC_GIT_TAG}   # a release tag such as v1.0.0, or a full commit hash
-  GIT_SHALLOW    ${BLOC_GIT_SHALLOW})
+  GIT_SHALLOW    ${BLOC_GIT_SHALLOW}
+  SOURCE_SUBDIR  src)               # the library only: no project, no tests
 # optional project configuration (spec section 6):
 # set(BLOC_CONFIG_HEADER "bloc_opts.h")
 # set(BLOC_CONFIG_DIRS   "${CMAKE_CURRENT_SOURCE_DIR}/config")
@@ -54,10 +55,12 @@ function(smoke_require message)
   endif()
 endfunction()
 
-get_property(_smoke_targets DIRECTORY "${bloc_SOURCE_DIR}" PROPERTY BUILDSYSTEM_TARGETS)
+# The CMake directory of BLOC is src/ of the checkout (SOURCE_SUBDIR).
+set(_smoke_bloc_dir "${bloc_SOURCE_DIR}/src")
+get_property(_smoke_targets DIRECTORY "${_smoke_bloc_dir}" PROPERTY BUILDSYSTEM_TARGETS)
 smoke_require("BLOC defines targets '${_smoke_targets}', expected exactly 'bloc' (CM-01)"
               _smoke_targets STREQUAL bloc)
-get_property(_smoke_subdirs DIRECTORY "${bloc_SOURCE_DIR}" PROPERTY SUBDIRECTORIES)
+get_property(_smoke_subdirs DIRECTORY "${_smoke_bloc_dir}" PROPERTY SUBDIRECTORIES)
 smoke_require("BLOC added subdirectories: ${_smoke_subdirs} (CM-01)" NOT _smoke_subdirs)
 smoke_require("the unity target exists (CM-01)" NOT TARGET unity)
 FetchContent_GetProperties(unity POPULATED _smoke_unity_populated)
@@ -96,13 +99,12 @@ endif()
 get_cmake_property(_smoke_cache_after CACHE_VARIABLES)
 set(_smoke_new_cache ${_smoke_cache_after})
 list(REMOVE_ITEM _smoke_new_cache ${_smoke_cache_before})
-# CMake itself records the version of a sub-project that declares one in the STATIC cache entries
-# CMAKE_PROJECT_VERSION*, so project(bloc VERSION ...) (CM-09) makes them appear; they are not
-# BLOC cache entries (docs/OPEN_QUESTIONS.md, entry OQ-001). GIT_EXECUTABLE is created by
-# FetchContent itself when it really downloads with git (FC-09); the offline variants never see it.
+# src/CMakeLists.txt declares no project(), so neither the bloc_* entries of project() nor the
+# CMAKE_PROJECT_VERSION* entries appear (OQ-001). GIT_EXECUTABLE is created by FetchContent itself
+# when it really downloads with git (FC-09); the offline variants never see it.
 foreach(_smoke_entry IN LISTS _smoke_new_cache)
   smoke_require("BLOC added the cache entry ${_smoke_entry} (CM-04)"
-                _smoke_entry MATCHES "^(BLOC_|bloc_|FETCHCONTENT_|CMAKE_PROJECT_VERSION|GIT_EXECUTABLE$)")
+                _smoke_entry MATCHES "^(BLOC_|FETCHCONTENT_|GIT_EXECUTABLE$)")
 endforeach()
 foreach(_smoke_test_option IN ITEMS BLOC_TEST_CONFIG BLOC_COVERAGE BLOC_SANITIZE BLOC_LTO)
   smoke_require("${_smoke_test_option} is defined in a consumer build (CM-04)"
@@ -127,7 +129,7 @@ smoke_require("directory INCLUDE_DIRECTORIES changed (CM-03)" _smoke_dirs_after 
 # are per target.
 foreach(_smoke_prop IN ITEMS COMPILE_OPTIONS COMPILE_DEFINITIONS INCLUDE_DIRECTORIES LINK_OPTIONS
                              LINK_DIRECTORIES)
-  get_property(_smoke_value DIRECTORY "${bloc_SOURCE_DIR}" PROPERTY ${_smoke_prop})
+  get_property(_smoke_value DIRECTORY "${_smoke_bloc_dir}" PROPERTY ${_smoke_prop})
   smoke_require("BLOC set the directory property ${_smoke_prop}: '${_smoke_value}' (CM-03)"
                 NOT _smoke_value)
 endforeach()

@@ -105,7 +105,7 @@ sample project configuration header is in
 Buffers with more than one reference are read-only: the functions that change a buffer
 (`bloc_set_len`, `bloc_add_header`, `bloc_remove_header`, `bloc_copy_from`, `bloc_append*`,
 `bloc_prepend*`) require a reference count of 1. The API is documented with Doxygen comments in
-[`include/bloc.h`](include/bloc.h); the behaviour is specified in
+[`src/include/bloc.h`](src/include/bloc.h); the behaviour is specified in
 [`docs/BLOC_SPEC.md`](docs/BLOC_SPEC.md).
 
 ## Using BLOC in your CMake project
@@ -119,7 +119,8 @@ include(FetchContent)
 FetchContent_Declare(bloc
   GIT_REPOSITORY https://github.com/Andste82/bloc.git
   GIT_TAG        v1.0.0   # a release tag such as v1.0.0, or a full commit hash
-  GIT_SHALLOW    TRUE)
+  GIT_SHALLOW    TRUE
+  SOURCE_SUBDIR  src)               # the library only: no project, no tests
 # optional project configuration (spec section 6):
 # set(BLOC_CONFIG_HEADER "bloc_opts.h")
 # set(BLOC_CONFIG_DIRS   "${CMAKE_CURRENT_SOURCE_DIR}/config")
@@ -129,7 +130,7 @@ FetchContent_MakeAvailable(bloc)
 target_link_libraries(my_app PRIVATE bloc::bloc)
 ```
 
-`add_subdirectory(path/to/bloc)` works the same way. To use a local checkout without network
+`add_subdirectory(path/to/bloc/src bloc)` works the same way; `src/` holds the whole library. To use a local checkout without network
 access, pass `-DFETCHCONTENT_SOURCE_DIR_BLOC=/path/to/bloc` when configuring your project.
 
 Project options (set them before `FetchContent_MakeAvailable`):
@@ -150,7 +151,7 @@ target as a PUBLIC definition, so the library and every consumer see the same co
 
 ## Configuration
 
-All options have defaults in [`include/bloc_opt.h`](include/bloc_opt.h) and are overridden in
+All options have defaults in [`src/include/bloc_opt.h`](src/include/bloc_opt.h) and are overridden in
 your own header. Section 6 of [`docs/BLOC_SPEC.md`](docs/BLOC_SPEC.md#6-compile-time-configuration)
 describes them in full, including the compile-time validation messages.
 

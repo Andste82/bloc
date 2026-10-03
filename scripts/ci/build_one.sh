@@ -213,7 +213,7 @@ build_baremetal() {
     if [ -n "$BLOC_ISYSTEM" ]; then
         flags="$flags -isystem $BLOC_ISYSTEM"
     fi
-    flags="$flags -I$root/include"
+    flags="$flags -I$root/src/include"
     if [ "$config" != default ]; then
         cfg_flags=("-DBLOC_CONFIG_HEADER=\"cfg_$config.h\"" "-I$root/test/configs"
             "-I$root/test/support")

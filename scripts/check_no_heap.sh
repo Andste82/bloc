@@ -39,7 +39,7 @@ rc=0
 # NH-03: only the allowed includes, none of the forbidden functions (even in comments).
 check_grep() {
     local bad
-    bad="$(grep -rnE '^[[:space:]]*#[[:space:]]*include' include src |
+    bad="$(grep -rnE '^[[:space:]]*#[[:space:]]*include' --include='*.[ch]' src |
         grep -vE '#[[:space:]]*include[[:space:]]+(<(stddef|stdint|stdbool|string)\.h>|"bloc(_opt)?\.h"|BLOC_CONFIG_HEADER)' ||
         true)"
     if [ -n "$bad" ]; then
@@ -47,14 +47,14 @@ check_grep() {
         echo "$bad" >&2
         return 1
     fi
-    bad="$(grep -rnwE 'malloc|calloc|realloc|aligned_alloc|memmove|alloca' include src || true)"
-    bad="$bad$(grep -rnE '\bfree\(' include src || true)"
+    bad="$(grep -rnwE 'malloc|calloc|realloc|aligned_alloc|memmove|alloca' --include='*.[ch]' src || true)"
+    bad="$bad$(grep -rnE '\bfree\(' --include='*.[ch]' src || true)"
     if [ -n "$bad" ]; then
         echo "NH-03 FAIL: forbidden identifier:" >&2
         echo "$bad" >&2
         return 1
     fi
-    echo "PASS NH-03 includes and identifiers of include/ and src/"
+    echo "PASS NH-03 includes and identifiers of src/ (library sources and public headers)"
 }
 
 # Compiles src/bloc.c for a configuration and checks its undefined symbols.
@@ -66,7 +66,7 @@ check_object() {
     local flags allowed=" memcpy memset " out sym bad=""
     mkdir -p "$dir"
     read -r -a flags <<<"$(bloc_library_warning_flags "$ccid") $opt -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
-    flags+=("-I$root/include" "$@")
+    flags+=("-I$root/src/include" "$@")
     if [ -n "$cfg" ]; then
         flags+=("-DBLOC_CONFIG_HEADER=\"$cfg\"")
     fi

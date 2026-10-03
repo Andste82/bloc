@@ -151,7 +151,7 @@ dead_strip_check() { # target full-api-text
     local target_flags
     read -r -a target_flags <<<"$BLOC_TARGET_FLAGS"
     if ! "$BLOC_CC" "${target_flags[@]}" -std=c11 -Os -ffunction-sections -fdata-sections \
-        -I"$root/include" "$root/src/bloc.c" "$root/test/size/min_app.c" -o "$elf" \
+        -I"$root/src/include" "$root/src/bloc.c" "$root/test/size/min_app.c" -o "$elf" \
         -Wl,--gc-sections --specs=nosys.specs >"$dir/link.log" 2>&1; then
         cat "$dir/link.log" >&2
         fail "FP-05 $target: min_app does not link"
@@ -188,7 +188,7 @@ measure() { # target label config
     flags="$(bloc_library_warning_flags "$BLOC_CCID") -Os -ffunction-sections -fdata-sections"
     flags="$flags $BLOC_TARGET_FLAGS"
     [ -n "$BLOC_ISYSTEM" ] && flags="$flags -isystem $BLOC_ISYSTEM"
-    flags="$flags -I$root/include"
+    flags="$flags -I$root/src/include"
     local expected
     expected="$(bloc_expected_failure "$target" "$cfg")"
     if [ -n "$expected" ]; then

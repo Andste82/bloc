@@ -16,6 +16,14 @@ the interpretation that was chosen and the tests it affects.
   accept `CMAKE_PROJECT_VERSION*`. These entries are written by CMake, not by BLOC's CMake code,
   and BLOC cannot avoid them without dropping its version.
 - **Tests affected:** FC-02 (every variant of `scripts/fetchcontent_smoke.sh`).
+- **Resolution (2026-10-03):** resolved by the repository layout instead of an exception. The
+  library moved into `src/` with its own `src/CMakeLists.txt`, which defines only the target `bloc`
+  / `bloc::bloc` and calls no `project()`. Consumers add it with `SOURCE_SUBDIR src`. Without a
+  `project()` call there are neither `bloc_*` nor `CMAKE_PROJECT_VERSION*` cache entries, and the
+  version of BLOC no longer leaks into a consumer's `CMAKE_PROJECT_VERSION`. `project(bloc VERSION
+  ...)` stays in the top-level development `CMakeLists.txt` (CM-09). FC-02 now accepts only
+  `BLOC_*`, `FETCHCONTENT_*` and `GIT_EXECUTABLE` (created by FetchContent's git download, FC-09).
+  Plan section 3.8 and CM-01, CM-02, CM-04, CM-05, CM-09 describe the new layout.
 
 ## OQ-002 Runtime invariant check in `bloc_release` (DBG-10)
 

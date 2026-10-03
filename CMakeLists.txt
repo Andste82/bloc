@@ -10,15 +10,10 @@ endif()
 
 option(BLOC_BUILD_TESTS    "Build the BLOC unit tests"                ${BLOC_IS_TOP_LEVEL})
 option(BLOC_BUILD_EXAMPLES "Build the BLOC examples"                  ${BLOC_IS_TOP_LEVEL})
-option(BLOC_WERROR         "Treat warnings in BLOC sources as errors" ${BLOC_IS_TOP_LEVEL})
-
-# Guarded so that a consumer's normal variable wins on the first configure too.
-# (Under CMake 3.20, policy CMP0126 does not exist and set(CACHE) would hide it.)
-if(NOT DEFINED BLOC_CONFIG_HEADER)
-  set(BLOC_CONFIG_HEADER "" CACHE STRING "BLOC project configuration header, e.g. bloc_opts.h")
-endif()
-if(NOT DEFINED BLOC_CONFIG_DIRS)
-  set(BLOC_CONFIG_DIRS "" CACHE STRING "Absolute include directories containing BLOC_CONFIG_HEADER")
+# Normal variable, read by option(BLOC_WERROR) in src/ (policy CMP0077): warnings are errors in
+# BLOC's own build, a consumer gets the option's default OFF.
+if(BLOC_IS_TOP_LEVEL AND NOT DEFINED BLOC_WERROR)
+  set(BLOC_WERROR ON)
 endif()
 
 if(BLOC_IS_TOP_LEVEL)
@@ -49,36 +44,9 @@ if(BLOC_IS_TOP_LEVEL)
   endif()
 endif()
 
-add_library(bloc STATIC src/bloc.c)
-add_library(bloc::bloc ALIAS bloc)
-target_include_directories(bloc PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
-target_compile_features(bloc PUBLIC c_std_11)
-set_target_properties(bloc PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
-if(BLOC_CONFIG_HEADER)
-  foreach(_bloc_dir IN LISTS BLOC_CONFIG_DIRS)
-    if(NOT IS_ABSOLUTE "${_bloc_dir}")
-      message(FATAL_ERROR "BLOC_CONFIG_DIRS entries must be absolute paths, got \"${_bloc_dir}\"")
-    endif()
-  endforeach()
-  target_compile_definitions(bloc PUBLIC "BLOC_CONFIG_HEADER=\"${BLOC_CONFIG_HEADER}\"")
-  target_include_directories(bloc PUBLIC ${BLOC_CONFIG_DIRS})
-endif()
+# The library itself: the same file that consumers add with FetchContent (SOURCE_SUBDIR src).
+add_subdirectory(src)
 
-set(_bloc_warning_flags
-    -std=c11 -Wall -Wextra -Wpedantic
-    -Wconversion -Wsign-conversion -Wshadow -Wundef -Wvla -Wpointer-arith
-    -Wstrict-prototypes -Wmissing-prototypes -Wcast-align -fno-common)
-target_compile_options(bloc PRIVATE
-  "$<$<C_COMPILER_ID:GNU,Clang>:${_bloc_warning_flags}>"
-  $<$<C_COMPILER_ID:GNU>:-Wcast-align=strict>
-  # Clang lowers a memset call to __aeabi_memclr and a memcpy call to __aeabi_memcpy on ARM EABI
-  # targets, but the library may reference only memcpy and memset (R-03). PRIVATE, so it never
-  # reaches a consumer (CM-02).
-  $<$<C_COMPILER_ID:Clang>:-fno-builtin-memset>
-  $<$<C_COMPILER_ID:Clang>:-fno-builtin-memcpy>)
-if(BLOC_WERROR)
-  target_compile_options(bloc PRIVATE $<$<C_COMPILER_ID:GNU,Clang>:-Werror>)
-endif()
 if(BLOC_IS_TOP_LEVEL)
   # Release is -O2 for BLOC's own build (CMake's default would be -O3).
   target_compile_options(bloc PRIVATE

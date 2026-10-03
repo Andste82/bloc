@@ -41,7 +41,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 tier_gate() {
     if have clang-format; then
-        step "format" bash -c 'find include src test examples -name "*.[ch]" -print0 | xargs -0 clang-format --dry-run --Werror'
+        step "format" bash -c 'find src test examples -name "*.[ch]" -print0 | xargs -0 clang-format --dry-run --Werror'
     else
         skip format "clang-format is not installed"
     fi

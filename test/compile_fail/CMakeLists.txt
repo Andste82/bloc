@@ -14,7 +14,7 @@ function(bloc_add_compile_fail id regex)
   set(target compile_fail_cf${id})
   add_library(${target} OBJECT EXCLUDE_FROM_ALL "${CMAKE_CURRENT_SOURCE_DIR}/cf_${id}.c")
   target_include_directories(${target} PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../include" "${CMAKE_CURRENT_SOURCE_DIR}")
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../src/include" "${CMAKE_CURRENT_SOURCE_DIR}")
   target_compile_definitions(${target} PRIVATE "BLOC_CONFIG_HEADER=\"cf_${id}_cfg.h\"")
   set_target_properties(${target} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
   target_compile_options(${target} PRIVATE "$<$<C_COMPILER_ID:GNU,Clang>:-std=c11;-Werror>")
