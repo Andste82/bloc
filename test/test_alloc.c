@@ -221,6 +221,7 @@ void test_ALLOC_08_full_writes_stay_in_block(void)
     for (i = 0u; i < N; i++) {
         blocks[i] = bloc_alloc(&pool, 0u);
         TEST_ASSERT_NOT_NULL(blocks[i]);
+        TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_set_len(blocks[i], E));
         memcpy(&header[i], blocks[i], sizeof(header[i]));
     }
     for (i = 0u; i < N; i++) {
@@ -231,7 +232,7 @@ void test_ALLOC_08_full_writes_stay_in_block(void)
     }
     for (i = 0u; i < N; i++) {
         ts_check_fill(bloc_data(blocks[i]), E, (uint8_t)(0x10u * (i + 1u)));
-        TEST_ASSERT_EQUAL_UINT(0u, bloc_len(blocks[i]));
+        TEST_ASSERT_EQUAL_UINT(E, bloc_len(blocks[i]));
         TEST_ASSERT_EQUAL_UINT(0u, bloc_headroom(blocks[i]));
         TEST_ASSERT_EQUAL_UINT(1u, blocks[i]->refcount);
         TEST_ASSERT_EQUAL_PTR(&pool, blocks[i]->link.pool);
@@ -339,7 +340,9 @@ void test_ALLOC_12_high_water(void)
 
     ts_pool_setup(&pool, 6u, 16u);
     for (i = 0u; i < 3u; i++) {
-        blocks[used++] = bloc_alloc(&pool, 0u);
+        blocks[used] = bloc_alloc(&pool, 0u);
+        TEST_ASSERT_NOT_NULL(blocks[used]);
+        used++;
     }
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(blocks[--used]));
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(blocks[--used]));

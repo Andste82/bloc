@@ -21,12 +21,6 @@ cmake_bin="cmake"
 ctest_bin="ctest"
 mkdir -p "$fc"
 
-# The smoke program exercises the library only once main.c calls into it; until then the
-# run-time sensitivity checks (FC-04, FC-08 symbol check) cannot work and are reported as SKIP.
-smoke_uses_library() {
-    grep -q 'bloc_pool_init' "$smoke/main.c"
-}
-
 say() { echo "== $*"; }
 
 # configure <dir> [cmake args...]: configure the smoke project into a directory.
@@ -106,13 +100,7 @@ variant_mismatch() { # FC-04
     # shellcheck disable=SC2046
     configure "$dir" -G Ninja $(offline_args) -DSMOKE_MISMATCH=ON
     "$cmake_bin" --build "$dir"
-    if smoke_uses_library; then
-        "$ctest_bin" --test-dir "$dir" --output-on-failure
-    else
-        echo "SKIP FC-04 run: main.c is macro-only (scaffolding), the layout cross-check that" \
-            "detects the mismatch does not exist yet; configure and build were checked"
-        "$ctest_bin" --test-dir "$dir" --output-on-failure -R '^smoke$'
-    fi
+    "$ctest_bin" --test-dir "$dir" --output-on-failure
     check_ctest_list "$dir" smoke smoke_mismatch
 }
 
@@ -125,6 +113,7 @@ variant_cstd() { # FC-05
         configure "$dir" -G Ninja $(offline_args) "-DCMAKE_C_STANDARD=$std" \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
         build_and_test "$dir"
+        check_ctest_list "$dir" smoke
         python3 - "$dir/compile_commands.json" "$std" <<'PY'
 import json, sys
 path, std = sys.argv[1], sys.argv[2]
@@ -180,6 +169,10 @@ variant_cmake_floor() { # FC-07
 variant_baremetal() { # FC-08
     local dir="$fc/baremetal" elf
     if ! command -v arm-none-eabi-gcc >/dev/null 2>&1; then
+        if [ "${BLOC_STRICT:-0}" = 1 ] || [ "${CI:-}" = true ] || [ "${GITHUB_ACTIONS:-}" = true ]; then
+            echo "FAIL FC-08: arm-none-eabi-gcc is not installed (required in strict mode)" >&2
+            return 1
+        fi
         echo "SKIP FC-08: arm-none-eabi-gcc is not installed"
         return 0
     fi
@@ -197,15 +190,11 @@ variant_baremetal() { # FC-08
         echo "FC-08: main is missing in $elf" >&2
         return 1
     }
-    if smoke_uses_library; then
-        arm-none-eabi-nm "$elf" | grep -q ' T bloc_pool_init$' || {
-            echo "FC-08: bloc_pool_init is missing in $elf" >&2
-            return 1
-        }
-    else
-        echo "SKIP FC-08 symbol check: main.c is macro-only (scaffolding), so the ELF holds no" \
-            "bloc_pool_init yet; the bare-metal configure, compile and link were checked"
-    fi
+    arm-none-eabi-nm "$elf" | grep -q ' T bloc_pool_init$' || {
+        echo "FC-08: bloc_pool_init is missing in $elf" >&2
+        return 1
+    }
+    check_ctest_list "$dir" smoke
 }
 
 block_of() { # extract the bloc-fetchcontent block (markers included) of a file

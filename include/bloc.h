@@ -124,11 +124,11 @@ typedef struct {
 
 /**
  * Alignment of every block start: max(BLOC_BLOCK_ALIGNMENT, BLOC_PAYLOAD_ALIGNMENT,
- * _Alignof(struct bloc_handle)). A power of two. The storage base passed to bloc_pool_init()
+ * BLOC_ALIGNOF(struct bloc_handle)). A power of two. The storage base passed to bloc_pool_init()
  * must be aligned to it.
  */
 #define BLOC_STORAGE_ALIGNMENT                                                                     \
-    BLOC_MAX3(BLOC_BLOCK_ALIGNMENT, BLOC_PAYLOAD_ALIGNMENT, _Alignof(struct bloc_handle))
+    BLOC_MAX3(BLOC_BLOCK_ALIGNMENT, BLOC_PAYLOAD_ALIGNMENT, BLOC_ALIGNOF(struct bloc_handle))
 
 /** Rounds x up to a multiple of the power of two a, as size_t. */
 #define BLOC_ALIGN_UP(x, a) (((size_t)(x) + ((size_t)(a) - 1u)) & ~((size_t)(a) - 1u))
@@ -145,7 +145,7 @@ typedef struct {
 
 /** Declares a suitably aligned storage array `name` for n elements of size e. */
 #define BLOC_POOL_STORAGE(name, n, e)                                                              \
-    _Alignas(BLOC_STORAGE_ALIGNMENT) uint8_t name[BLOC_POOL_SIZE(n, e)]
+    BLOC_ALIGNAS(BLOC_STORAGE_ALIGNMENT) uint8_t name[BLOC_POOL_SIZE(n, e)]
 
 /** Largest element size whose block stride still fits bloc_size_t. */
 #define BLOC_ELEMENT_SIZE_MAX                                                                      \
@@ -154,7 +154,7 @@ typedef struct {
 /* --- Pool lifecycle --------------------------------------------------------------------- */
 
 /**
- * Initializes a pool over caller-provided storage and links all blocks into the free list in
+ * @brief Initializes a pool over caller-provided storage and links all blocks into the free list in
  * ascending address order. O(element_count). Not protected: the pool must not be in use.
  *
  * Checks run in this order and are always compiled; the first failure decides the result and
@@ -180,8 +180,8 @@ bloc_status_t bloc_pool_init(bloc_pool_t *pool, void *storage, size_t storage_si
                              bloc_count_t element_count, bloc_size_t element_size);
 
 /**
- * Marks an idle pool as uninitialized so it can be initialized again. O(1). The storage is not
- * touched.
+ * @brief Marks an idle pool as uninitialized so it can be initialized again. O(1). The storage is
+ * not touched.
  *
  * Thread safety: runs under BLOC_PROTECT when BLOC_THREAD_SAFE is 1.
  *
@@ -192,7 +192,7 @@ bloc_status_t bloc_pool_init(bloc_pool_t *pool, void *storage, size_t storage_si
 bloc_status_t bloc_pool_deinit(bloc_pool_t *pool);
 
 /**
- * Number of free blocks (element_count - active_count). O(1), always available.
+ * @brief Number of free blocks (element_count - active_count). O(1), always available.
  *
  * Thread safety: runs under BLOC_PROTECT when BLOC_THREAD_SAFE is 1.
  *
@@ -203,7 +203,7 @@ bloc_count_t bloc_pool_free_count(const bloc_pool_t *pool);
 
 #if BLOC_STATS
 /**
- * Reads the pool statistics: high-water mark of active buffers and the number of allocations
+ * @brief Reads the pool statistics: high-water mark of active buffers and the number of allocations
  * that failed because the pool was empty (saturating at BLOC_COUNT_MAX). Available when
  * BLOC_STATS is 1.
  *
@@ -219,7 +219,7 @@ bloc_status_t bloc_pool_get_stats(const bloc_pool_t *pool, bloc_pool_stats_t *ou
 /* --- Allocation and lifetime ------------------------------------------------------------ */
 
 /**
- * Takes a block from the pool. The new buffer has refcount 1, len 0 and an offset of the
+ * @brief Takes a block from the pool. The new buffer has refcount 1, len 0 and an offset of the
  * requested headroom rounded up to BLOC_PAYLOAD_ALIGNMENT, so the payload starts aligned and
  * bloc_headroom() may exceed the request by up to PA - 1. The data contents are undefined.
  * O(1).
@@ -234,7 +234,7 @@ bloc_status_t bloc_pool_get_stats(const bloc_pool_t *pool, bloc_pool_stats_t *ou
 bloc_handle_t bloc_alloc(bloc_pool_handle_t pool, bloc_size_t headroom);
 
 /**
- * Like bloc_alloc(), and additionally zeroes the whole data area (including the headroom).
+ * @brief Like bloc_alloc(), and additionally zeroes the whole data area (including the headroom).
  * len stays 0. O(element_size). On failure nothing is written.
  *
  * Thread safety: the allocation runs under BLOC_PROTECT when BLOC_THREAD_SAFE is 1;
@@ -247,7 +247,7 @@ bloc_handle_t bloc_alloc(bloc_pool_handle_t pool, bloc_size_t headroom);
 bloc_handle_t bloc_calloc(bloc_pool_handle_t pool, bloc_size_t headroom);
 
 /**
- * Adds a reference. All references share one view (offset, len, data). O(1).
+ * @brief Adds a reference. All references share one view (offset, len, data). O(1).
  *
  * Thread safety: runs under BLOC_PROTECT when BLOC_THREAD_SAFE is 1.
  *
@@ -258,7 +258,7 @@ bloc_handle_t bloc_calloc(bloc_pool_handle_t pool, bloc_size_t headroom);
 bloc_status_t bloc_retain(bloc_handle_t b);
 
 /**
- * Drops a reference; at zero the block returns to the head of its pool's free list. O(1).
+ * @brief Drops a reference; at zero the block returns to the head of its pool's free list. O(1).
  * Set handles to NULL after the final release: a stale handle cannot be detected once the block
  * is reallocated.
  *
@@ -273,7 +273,7 @@ bloc_status_t bloc_release(bloc_handle_t b);
 /* --- Access and zero-copy length operations --------------------------------------------- */
 
 /**
- * Start of the payload (data_start + offset). Takes a const handle and returns a mutable
+ * @brief Start of the payload (data_start + offset). Takes a const handle and returns a mutable
  * pointer, like strchr(), so it serves readers and writers. Never takes the lock.
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
@@ -284,7 +284,7 @@ bloc_status_t bloc_release(bloc_handle_t b);
 void *bloc_data(bloc_const_handle_t b);
 
 /**
- * Payload length in bytes.
+ * @brief Payload length in bytes.
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
  *
@@ -294,7 +294,7 @@ void *bloc_data(bloc_const_handle_t b);
 bloc_size_t bloc_len(bloc_const_handle_t b);
 
 /**
- * Free bytes in front of the payload (the offset).
+ * @brief Free bytes in front of the payload (the offset).
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
  *
@@ -304,7 +304,7 @@ bloc_size_t bloc_len(bloc_const_handle_t b);
 bloc_size_t bloc_headroom(bloc_const_handle_t b);
 
 /**
- * Free bytes behind the payload (element_size - offset - len).
+ * @brief Free bytes behind the payload (element_size - offset - len).
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
  *
@@ -314,8 +314,8 @@ bloc_size_t bloc_headroom(bloc_const_handle_t b);
 bloc_size_t bloc_tailroom(bloc_const_handle_t b);
 
 /**
- * Sets the payload length without moving data; grows or shrinks. Grown bytes keep whatever the
- * block contains. Requires len <= element_size - offset. Mutating: needs refcount 1.
+ * @brief Sets the payload length without moving data; grows or shrinks. Grown bytes keep whatever
+ * the block contains. Requires len <= element_size - offset. Mutating: needs refcount 1.
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
  *
@@ -326,8 +326,8 @@ bloc_size_t bloc_tailroom(bloc_const_handle_t b);
 bloc_status_t bloc_set_len(bloc_handle_t b, bloc_size_t len);
 
 /**
- * Exposes n bytes of headroom as payload (offset -= n, len += n) without copying. The new bytes
- * are uninitialized. Requires n <= offset. Mutating: needs refcount 1.
+ * @brief Exposes n bytes of headroom as payload (offset -= n, len += n) without copying. The new
+ * bytes are uninitialized. Requires n <= offset. Mutating: needs refcount 1.
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
  *
@@ -338,7 +338,7 @@ bloc_status_t bloc_set_len(bloc_handle_t b, bloc_size_t len);
 bloc_status_t bloc_add_header(bloc_handle_t b, bloc_size_t n);
 
 /**
- * Strips n bytes from the front of the payload (offset += n, len -= n) without copying.
+ * @brief Strips n bytes from the front of the payload (offset += n, len -= n) without copying.
  * Requires n <= len. Mutating: needs refcount 1.
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
@@ -352,7 +352,7 @@ bloc_status_t bloc_remove_header(bloc_handle_t b, bloc_size_t n);
 /* --- Copy, append and prepend ----------------------------------------------------------- */
 
 /**
- * Copies n bytes from external memory to the destination offset and sets len = n. The source
+ * @brief Copies n bytes from external memory to the destination offset and sets len = n. The source
  * range must not overlap the destination range. Requires n <= element_size - offset.
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
@@ -366,7 +366,7 @@ bloc_status_t bloc_remove_header(bloc_handle_t b, bloc_size_t n);
 bloc_status_t bloc_copy_from(bloc_handle_t dst, const void *src, bloc_size_t n);
 
 /**
- * Copies n payload bytes starting at position pos into external memory. The buffer is not
+ * @brief Copies n payload bytes starting at position pos into external memory. The buffer is not
  * changed. Requires pos <= len and n <= len - pos. Allowed at any refcount.
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
@@ -380,7 +380,7 @@ bloc_status_t bloc_copy_from(bloc_handle_t dst, const void *src, bloc_size_t n);
 bloc_status_t bloc_copy_to(bloc_const_handle_t src, void *dst, bloc_size_t n, bloc_size_t pos);
 
 /**
- * Copies the whole payload of src to the destination offset and sets dst.len = src.len. The
+ * @brief Copies the whole payload of src to the destination offset and sets dst.len = src.len. The
  * destination offset is kept; the source offset is never copied. The pools may differ.
  * bloc_copy(b, b) is a no-op returning BLOC_OK. Requires src.len <= element_size - dst.offset.
  *
@@ -393,7 +393,7 @@ bloc_status_t bloc_copy_to(bloc_const_handle_t src, void *dst, bloc_size_t n, bl
 bloc_status_t bloc_copy(bloc_handle_t dst, bloc_const_handle_t src);
 
 /**
- * Appends the first n payload bytes of src behind the destination payload (len += n).
+ * @brief Appends the first n payload bytes of src behind the destination payload (len += n).
  * bloc_append(b, b, n) is allowed. Requires n <= src.len and n <= tailroom(dst).
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
@@ -406,8 +406,8 @@ bloc_status_t bloc_copy(bloc_handle_t dst, bloc_const_handle_t src);
 bloc_status_t bloc_append(bloc_handle_t dst, bloc_const_handle_t src, bloc_size_t n);
 
 /**
- * Appends n bytes of external memory behind the destination payload (len += n). The source range
- * must not overlap the destination's write range. Requires n <= tailroom(dst).
+ * @brief Appends n bytes of external memory behind the destination payload (len += n). The source
+ * range must not overlap the destination's write range. Requires n <= tailroom(dst).
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
  *
@@ -419,8 +419,8 @@ bloc_status_t bloc_append(bloc_handle_t dst, bloc_const_handle_t src, bloc_size_
 bloc_status_t bloc_append_data(bloc_handle_t dst, const void *src, bloc_size_t n);
 
 /**
- * Prepends the first n payload bytes of src in front of the destination payload (offset -= n,
- * len += n). bloc_prepend(b, b, n) is allowed. Requires n <= src.len and n <= headroom(dst).
+ * @brief Prepends the first n payload bytes of src in front of the destination payload (offset -=
+ * n, len += n). bloc_prepend(b, b, n) is allowed. Requires n <= src.len and n <= headroom(dst).
  *
  * Thread safety: not protected; the caller owns the buffer (spec section 9).
  *
@@ -432,7 +432,7 @@ bloc_status_t bloc_append_data(bloc_handle_t dst, const void *src, bloc_size_t n
 bloc_status_t bloc_prepend(bloc_handle_t dst, bloc_const_handle_t src, bloc_size_t n);
 
 /**
- * Prepends n bytes of external memory in front of the destination payload (offset -= n,
+ * @brief Prepends n bytes of external memory in front of the destination payload (offset -= n,
  * len += n). The source range must not overlap the destination's write range. Requires
  * n <= headroom(dst).
  *

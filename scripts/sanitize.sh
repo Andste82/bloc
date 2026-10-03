@@ -61,5 +61,15 @@ for cfg in "${configs[@]}"; do
     fi
     cmake --preset "$preset" "${extra[@]}"
     cmake --build --preset "$preset"
-    ctest --preset "$preset"
+    if [ "$tsan" -eq 1 ] && setarch "$(uname -m)" -R true >/dev/null 2>&1; then
+        # Recent kernels with a high vm.mmap_rnd_bits value (32) break the ThreadSanitizer memory
+        # layout unless ASLR is disabled for the test processes.
+        setarch "$(uname -m)" -R ctest --preset "$preset"
+    elif ! ctest --preset "$preset"; then
+        if [ "$tsan" -eq 1 ]; then
+            echo "note: if the failures say 'incompatible memory layout', lower vm.mmap_rnd_bits" \
+                "(sysctl vm.mmap_rnd_bits=28) or run where setarch -R is permitted" >&2
+        fi
+        exit 1
+    fi
 done

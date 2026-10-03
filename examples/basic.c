@@ -33,6 +33,7 @@ int main(void)
     static const uint8_t header[HEADER_SIZE] = {0xB1, 0x0C, 0x00, 0x01};
     char out[sizeof(payload)];
     bloc_handle_t b;
+    bloc_handle_t c;
     int failed = 0;
 
     /* 1. Initialize the pool over the static storage. */
@@ -73,7 +74,22 @@ int main(void)
     failed |= check(memcmp(out, payload, sizeof(payload)) == 0, "payload intact");
     (void)printf("payload: %s\n", out);
 
-    /* 7. Final release returns the block; the handle must not be used afterwards. */
+    /* 7. A second buffer is built back to front: payload first, then two prepended prefixes. */
+    c = bloc_alloc(&pool, HEADROOM);
+    failed |= check(c != NULL, "alloc second buffer");
+    if (c == NULL) {
+        return 1;
+    }
+    failed |= check(bloc_append_data(c, payload, (bloc_size_t)sizeof(payload)) == BLOC_OK,
+                    "append payload to second buffer");
+    failed |= check(bloc_prepend_data(c, header, HEADER_SIZE) == BLOC_OK, "prepend header bytes");
+    failed |=
+        check(bloc_prepend(c, b, HEADER_SIZE) == BLOC_OK, "prepend bytes of the first buffer");
+    failed |= check(bloc_len(c) == 2u * HEADER_SIZE + sizeof(payload), "length after prepends");
+    failed |= check(memcmp(bloc_data(c), bloc_data(b), HEADER_SIZE) == 0, "prefix copied");
+    failed |= check(bloc_release(c) == BLOC_OK, "release second buffer");
+
+    /* 8. Final release returns the block; the handle must not be used afterwards. */
     failed |= check(bloc_release(b) == BLOC_OK, "final release");
     b = NULL;
     failed |= check(bloc_pool_free_count(&pool) == PACKET_COUNT, "all blocks free again");
