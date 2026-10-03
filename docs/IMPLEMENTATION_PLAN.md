@@ -1,6 +1,6 @@
 # BLOC V1 — Implementation Plan
 
-Plan revision 1 · 2026-10-03 · for `docs/BLOC_SPEC.md` revision 3
+Plan revision 2 · 2026-10-03 · for `docs/BLOC_SPEC.md` revision 4
 
 This plan tells an implementing agent exactly what to build, in which order, and how to prove it is correct. It is written to be followed step by step without further design work. The specification `docs/BLOC_SPEC.md` is the source of truth for behaviour; this plan adds structure, tooling, test requirements and acceptance criteria.
 
@@ -24,12 +24,13 @@ This plan tells an implementing agent exactly what to build, in which order, and
 | --- | --- |
 | R-01 | BLOC never allocates memory. No `malloc`, `calloc`, `realloc`, `free`, `aligned_alloc`, `memmove`, `alloca`, VLAs. |
 | R-02 | `src/` and `include/` may include only `<stddef.h>`, `<stdint.h>`, `<stdbool.h>`, `<string.h>`. Never `<stdlib.h>`, `<stdio.h>`, `<assert.h>`. |
-| R-03 | The only C library symbols the compiled library may reference are `memcpy` and `memset`. |
-| R-04 | Pure C11 (`-std=c11`), no compiler extensions except `__builtin_trap` inside the guarded default of `BLOC_PLATFORM_ASSERT`. |
+| R-03 | The only C library symbols the compiled library may reference are `memcpy` and `memset`. With `BLOC_DEBUG = 0` it must not reference any compiler runtime helper (libgcc, compiler-rt) on any target in section 3.6. With `BLOC_DEBUG = 1` it may additionally reference the target's unsigned division and modulo helpers (spec section 2). |
+| R-04 | Pure C11 (`-std=c11`), no compiler extensions except `__builtin_trap` inside the guarded default of `BLOC_PLATFORM_ASSERT`. Compiler- or target-specific code (inline assembly, intrinsics) is allowed only in `test/` and in configuration headers. |
 | R-05 | No recursion, no floating point, no function-local `static` variables, no global mutable state in `src/`. |
 | R-06 | No `static inline` functions in public headers. All executable code lives in `src/bloc.c`, so coverage measures it. |
 | R-07 | Do not add, remove or rename public API functions, types, macros or enum values beyond spec section 15 and the macros named in the spec. |
 | R-08 | Every behaviour must be reachable from the public API or from a documented white-box test technique (section 6.4). No test-only code paths in `src/` (no `#ifdef TESTING`, no `#ifdef COVERAGE`). |
+| R-09 | Minimal `.text` footprint (spec section 17): budgets on ARMv6-M and ARMv7-M, zero `.data`/`.bss`, no runtime helpers, and dead-strippable per function. Section 4.6 gives the implementation rules. |
 
 ### 1.2 Quality rules
 
@@ -38,9 +39,10 @@ This plan tells an implementing agent exactly what to build, in which order, and
 | Q-01 | 100 % line, 100 % branch and 100 % function coverage of `src/bloc.c`, separately for **every** coverage configuration in section 6.2. |
 | Q-02 | Coverage exclusion markers are forbidden: no `LCOV_EXCL_*`, `GCOVR_EXCL_*`, `// NOSONAR`-style or pragma-based exclusions. The only permitted gcovr option that hides branches is `--exclude-unreachable-branches`. |
 | Q-03 | If a branch cannot be covered, the code is wrong: restructure it (remove a defensive branch that the spec does not require, merge conditions, reorder checks). Never lower thresholds. |
-| Q-04 | Zero compiler warnings with GCC and Clang at the flags in section 3.3 (`-Werror`). |
-| Q-05 | All tests pass under AddressSanitizer + UndefinedBehaviorSanitizer and the thread stress test passes under ThreadSanitizer. |
+| Q-04 | Zero compiler warnings (`-Werror`) with every compiler and target in the compiler matrix (section 3.6), at the flags in section 3.3. |
+| Q-05 | All tests pass under AddressSanitizer + UndefinedBehaviorSanitizer with both GCC and Clang, and the thread stress test passes under ThreadSanitizer. |
 | Q-06 | Tests never hard-code layout numbers (4, 12, 16 …). They derive expected values from the public macros and the formulas in the spec, so the same test is valid in every configuration. |
+| Q-07 | The footprint gates of section 9.5 pass: spec budgets are met, and the regression baseline (`scripts/size_baseline.txt`) never grows without a justified update in the same commit. |
 
 ### 1.3 Handling ambiguity
 
@@ -59,9 +61,9 @@ If something is unclear or the spec appears contradictory:
 bloc/
 ├── CMakeLists.txt                 top-level build (library, tests, options)
 ├── CMakePresets.json              one configure preset per configuration (section 6)
-├── README.md                      overview, quick start, build/test instructions (phase 10)
+├── README.md                      overview, quick start, build/test instructions (phase 7)
 ├── LICENSE                        existing, MIT
-├── .clang-format                  formatting rules (section 3.5)
+├── .clang-format                  formatting rules (section 3.7)
 ├── .github/workflows/ci.yml       CI pipeline (section 10)
 ├── docs/
 │   ├── BLOC_SPEC.md               specification (existing)
@@ -78,13 +80,18 @@ bloc/
 ├── scripts/
 │   ├── coverage.sh                build + test + gcovr gate for every coverage config
 │   ├── sanitize.sh                ASan/UBSan run over every coverage config
-│   ├── check_no_heap.sh           symbol check for R-01..R-03
+│   ├── check_no_heap.sh           symbol check for R-01..R-03 (host builds)
+│   ├── cross_check.sh             cross-compile matrix and symbol check (section 9.4)
+│   ├── check_size.sh              footprint report and gates (section 9.5)
+│   ├── size_baseline.txt          committed footprint regression baseline
 │   └── run_all.sh                 everything CI does, locally
 └── test/
     ├── CMakeLists.txt
     ├── configs/                   one header per test configuration (section 6)
     ├── support/                   test support library (section 5)
     ├── compile_fail/              sources that must fail to compile (section 8.1)
+    ├── target/                    compile-only static layout checks for cross targets (XC-05)
+    ├── size/                      minimal link programs for dead-strip checks (FP-05)
     └── test_*.c                   Unity test files (section 8)
 ```
 
@@ -96,13 +103,18 @@ bloc/
 
 | Tool | Version | Use |
 | --- | --- | --- |
-| CMake | ≥ 3.20 | Build, CTest |
-| GCC | ≥ 11 | Primary compiler, coverage (`gcov`) |
-| Clang | ≥ 14 | Second compiler, sanitizers |
-| gcovr | ≥ 7.0 | Coverage report and gate (`--fail-under-function` needs ≥ 7) |
+| CMake | ≥ 3.20 (devcontainer: 4.2) | Build, CTest |
+| Ninja | any (devcontainer: 1.13) | CMake generator |
+| GCC | ≥ 11 (devcontainer: 15.2) | Host compiler, coverage (`gcov`), sanitizers |
+| Clang | ≥ 14 (devcontainer: 21.1) | Host compiler, sanitizers; ARM and RISC-V cross compiler |
+| `arm-none-eabi-gcc` + newlib | devcontainer: 14.2 | ARM cross compiler, footprint reference compiler (spec section 17) |
+| `riscv64-unknown-elf-gcc` + picolibc | devcontainer: 14.2 | RISC-V cross compiler (RV32 and RV64) |
+| `avr-gcc` + avr-libc | devcontainer: 14.3 | 8-bit AVR cross compiler (16-bit `int` and `size_t`) |
+| gcovr | ≥ 7.0 (devcontainer: 7.2) | Coverage report and gate (`--fail-under-function` needs ≥ 7) |
 | Unity | v2.6.1 (tag), fetched with CMake `FetchContent` | Unit test framework |
-| binutils `nm` | any | No-heap symbol check |
-| `arm-none-eabi-gcc` | optional | Cross-compile check (section 9.4) |
+| binutils `nm`, `size` (host and `<triple>-` prefixed) | any | Symbol and footprint checks |
+
+The devcontainer (`.devcontainer/Dockerfile`, Ubuntu 26.04) is the reference environment. Footprint baselines are only valid for the compiler versions recorded in them (section 9.5). There is no QEMU in the devcontainer, so cross targets are compile-, link- and symbol-checked but do not run tests (section 3.6, tier 3).
 
 Unity is fetched at configure time:
 
@@ -124,6 +136,8 @@ FetchContent_MakeAvailable(unity)
 | `BLOC_TEST_CONFIG` | `default` | One of `default`, `debug`, `nochecks`, `wide`, `noalign`, `bigalign`, `pthread` |
 | `BLOC_COVERAGE` | `OFF` | Adds `-O0 -g --coverage` to library and tests (GCC only) |
 | `BLOC_SANITIZE` | empty | Comma list passed to `-fsanitize=`, e.g. `address,undefined` or `thread` |
+
+The host compiler is chosen with the preset (`CMAKE_C_COMPILER`), not with an option. Preset names are `<compiler>-<cfg>` (Debug, `-O0`), `<compiler>-<cfg>-rel` (Release, `-O2`), `<compiler>-<cfg>-size` (MinSizeRel, `-Os`), `cov-<cfg>` (GCC coverage) and `san-<compiler>-<cfg>` (sanitizers), with `<compiler>` ∈ {`gcc`, `clang`}. Build directories are `build/<preset>`.
 
 `BLOC_TEST_CONFIG` selects `test/configs/cfg_<name>.h`. For every value except `default`, the build adds `BLOC_CONFIG_HEADER="cfg_<name>.h"` (quoted string) and `test/configs` plus `test/support` to the include path **of both the library and the tests**, so library and tests are always compiled with the same configuration. For `default`, `BLOC_CONFIG_HEADER` is not defined at all; this proves the library builds with zero configuration.
 
@@ -148,6 +162,8 @@ GCC additionally: `-Wcast-align=strict` (replaces `-Wcast-align`). Release build
 
 Tests: `-std=c11 -Wall -Wextra -Wpedantic -Werror` (no `-Wconversion`). Unity itself is compiled without `-Werror`.
 
+Cross targets (section 3.6) use the library flags above plus the target flags, `-Os -ffunction-sections -fdata-sections`, and `-ffreestanding` only for the static layout checks in `test/target/`. GCC targets also use `-Wcast-align=strict`. Clang cross builds get the C library headers through `-isystem` (newlib: `/usr/lib/arm-none-eabi/include`; picolibc: `/usr/lib/picolibc/riscv64-unknown-elf/include`), because the GNU toolchains report no usable `-print-sysroot`.
+
 `-Wcast-qual` is intentionally not enabled: `bloc_data()` is the single sanctioned place that removes `const` (spec section 10); mark it with a comment.
 
 ### 3.4 Casting rules that keep `-Wcast-align=strict` quiet
@@ -156,7 +172,29 @@ Tests: `-std=c11 -Wall -Wextra -Wpedantic -Werror` (no `-Wconversion`). Unity it
 - Handle to byte pointer: `(uint8_t *)(void *)h`.
 - Address comparisons for debug checks: convert to `uintptr_t` first.
 
-### 3.5 Style
+### 3.5 Portability rules
+
+Some targets in the matrix differ from a 64-bit host, and the code must be correct on all of them:
+
+- `int` may be 16 bits (AVR), so `uint16_t` operands may not promote to `int`. Never rely on promotion for correctness; cast explicitly.
+- `size_t` and pointers may be 16 bits (AVR). Configurations with `BLOC_SIZE_T` wider than `size_t` are rejected at compile time (XC-04).
+- There may be no hardware divider (ARMv6-M, AVR, RV32I/RV32E) and no unaligned access (ARMv6-M).
+- Literal pools on ARM are part of `.text`.
+
+### 3.6 Compiler matrix
+
+| Tier | Compiler | Targets / flags | What runs |
+| --- | --- | --- | --- |
+| 1 Host | GCC, Clang | native x86-64 (`-m32` optional, CC-02) | Full build, all unit tests, compile-fail tests, in all 7 configurations; sanitizers; GCC coverage |
+| 2 Cross | `arm-none-eabi-gcc` | ARMv6-M `-mcpu=cortex-m0plus -mthumb`; ARMv7-M `-mcpu=cortex-m3 -mthumb`; ARMv7E-M `-mcpu=cortex-m4 -mthumb -mfloat-abi=soft`; ARMv7-A `-mcpu=cortex-a7 -mthumb -mfloat-abi=soft`; ARMv7-R `-mcpu=cortex-r5 -mthumb -mfloat-abi=soft` | Library compile, static layout checks, symbol check, footprint, dead-strip link |
+| 2 Cross | Clang | `--target=thumbv6m-none-eabi -mcpu=cortex-m0plus`; `--target=thumbv7m-none-eabi -mcpu=cortex-m3`; `--target=riscv32-unknown-elf -march=rv32imac -mabi=ilp32` | Library compile, static layout checks, symbol check, footprint |
+| 2 Cross | `riscv64-unknown-elf-gcc` | RV32IMAC `-march=rv32imac -mabi=ilp32`; RV32I `-march=rv32i -mabi=ilp32` (no divider); RV64IMAC `-march=rv64imac -mabi=lp64` | Library compile, static layout checks, symbol check, footprint |
+| 2 Cross | `avr-gcc` | `-mmcu=atmega328p` (16-bit `int`, `size_t` and pointers) | Library compile, static layout checks, symbol check, footprint |
+| 3 Target execution | any tier-2 compiler + QEMU | — | Optional and not required. Registered only if `qemu-system-arm` is found: runs the unit tests on `mps2-an385` (Cortex-M3) with semihosting. Not part of any gate. |
+
+Tier-2 configurations: every test configuration except `pthread`. AVR also excludes `wide`, which must fail there with the expected message (XC-04). Test configuration headers, and the support headers they include, must therefore compile freestanding: they may only include the headers allowed by R-02.
+
+### 3.7 Style
 
 - `.clang-format` based on LLVM, `IndentWidth: 4`, `ColumnLimit: 100`, `BreakBeforeBraces: Linux`.
 - Public symbols prefixed `bloc_` / `BLOC_`; internal `static` helpers prefixed `bloc_i_`.
@@ -238,7 +276,7 @@ Assertion messages are short string literals prefixed with the function name, e.
 | Helper | Compiled when | Purpose |
 | --- | --- | --- |
 | `static uint8_t *bloc_i_data_start(const struct bloc_handle *b)` | always | `(uint8_t *)(uintptr_t)b + BLOC_HEADER_SIZE` |
-| `static bool bloc_i_addr_valid(const struct bloc_handle *b)` | `BLOC_DEBUG` | Handle validity steps 2–5 (spec section 13), one `if` per step |
+| `static bool bloc_i_addr_valid(const struct bloc_handle *b)` | `BLOC_DEBUG` | Handle validity steps 2–5 (spec section 13), one `if` per step. Step 5 is the only `%` in the library (allowed under R-03 in debug builds only). |
 | `static bool bloc_i_handle_valid(const struct bloc_handle *b)` | `BLOC_DEBUG` | Step 1 (`refcount != 0`) then `bloc_i_addr_valid` |
 | `static bool bloc_i_overlaps(const void *ext, size_t n, const uint8_t *dst)` | `BLOC_DEBUG` | `n != 0 && ext < dst + n && dst < ext + n`, compared as `uintptr_t` |
 
@@ -268,7 +306,10 @@ REQUIRE pool && storage && element_count != 0 && element_size != 0      → BLOC
 REQUIRE (size_t)element_size <= BLOC_ELEMENT_SIZE_MAX                  → BLOC_INVALID
 REQUIRE ((uintptr_t)storage & (BLOC_STORAGE_ALIGNMENT - 1)) == 0       → BLOC_ALIGNMENT
 stride = BLOC_BLOCK_STRIDE(element_size)
-REQUIRE storage_size / stride >= element_count                         → BLOC_BOUNDS
+rem = storage_size                       -- no division (R-03), no overflow
+for i in 0 .. element_count-1:
+    REQUIRE rem >= stride                                              → BLOC_BOUNDS
+    rem -= stride
 -- only now write anything --
 for i in 0 .. element_count-2: block(i).refcount = 0; block(i).link.next_free = block(i+1)
 block(last).refcount = 0; block(last).link.next_free = NULL
@@ -368,6 +409,17 @@ return BLOC_OK
 
 **`bloc_prepend_data`**: as `bloc_prepend` with an external source (pointer checks on `dst`, `src`), plus the debug overlap check after the bounds checks.
 
+### 4.6 Code-size rules (R-09)
+
+These rules implement spec section 17. Their effect is measured (section 9.5), not assumed.
+
+- Factor out repeated address arithmetic: `bloc_i_data_start`, plus `bloc_i_payload(b)` = data start + offset. Copy, append and prepend share one internal routine for the common "bounds known, `memcpy`, update `offset`/`len`" step where that measurably reduces size. Do not merge public functions into one dispatcher with a mode argument: that would defeat dead-stripping (FP-05).
+- Keep error exits cheap: return status codes directly and avoid duplicated unlock/return sequences. A single exit label per protected section is acceptable if it reduces size.
+- Avoid `size_t` arithmetic where `bloc_size_t` is provably sufficient: on ARM both are 32-bit, but on AVR `size_t` widening costs instructions. Overflow-safe subtraction-form checks (spec section 13) need no widening.
+- Avoid loads of 64-bit constants and avoid `switch` statements that generate tables in `.rodata` (FP-03).
+- Do not add `__attribute__((noinline/always_inline))` or other compiler pragmas in `src/` (R-04). Influence code size through structure only.
+- Every structural change that changes the footprint updates `scripts/size_baseline.txt` in the same commit (FP-04), with the size delta per target in the commit message.
+
 ---
 
 ## 5. Test support library (`test/support/`)
@@ -443,7 +495,7 @@ Each configuration is a separate CMake build directory. The library and all test
 | `bigalign` | yes | 64 | 16 | `uint16_t` | `uint8_t` | `uint32_t` | 1 | 1 | 0 | 0 | `BA > PA`, cache-line blocks, 32-bit refcount |
 | `pthread` | no | 4 | 4 | `uint16_t` | `uint16_t` | `uint16_t` | 1 | 0 | 0 | 1 (pthread mutex) | Thread stress under TSan only |
 
-All test configurations except `default` route `BLOC_PLATFORM_ASSERT(msg)` to `ts_assert_fail(msg)`. The `pthread` configuration defines the protect macros around one global `pthread_mutex_t` from `test/support/ts_pthread.c`.
+All test configurations except `default` route `BLOC_PLATFORM_ASSERT(msg)` to `ts_assert_fail(msg)`. The `pthread` configuration defines the protect macros around one global `pthread_mutex_t` from `test/support/ts_pthread.c`. All configuration headers except `cfg_pthread.h` must compile freestanding for the tier-2 cross targets (section 3.6).
 
 ### 6.3 Applicability tags used in section 8
 
@@ -530,7 +582,7 @@ General requirements for **every** test:
 | CFG-10 | ALL | Read-only API accepts `bloc_const_handle_t` (compile test: pass a const handle to every read-only function). |
 | CFG-11 | ALL | `bloc_status_t` values: `BLOC_OK == 0`, then `INVALID, BOUNDS, BUSY, OVERFLOW, ALIGNMENT` in that order; `BLOC_EMPTY` is not defined. |
 
-Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake target is `EXCLUDE_FROM_ALL`, and a CTest test builds it (`cmake --build . --target <cf>`) and passes only if the build output matches the given regex (`PASS_REGULAR_EXPRESSION`), so a failure for an unrelated reason is caught. Compile-fail targets use `-std=c11 -Werror` without `-Wpedantic`. They run in every build directory.
+Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake target is `EXCLUDE_FROM_ALL`, and a CTest test builds it (`cmake --build . --target <cf>`) and passes only if the build output matches the given regex (`PASS_REGULAR_EXPRESSION`), so a failure for an unrelated reason is caught. Compile-fail targets use `-std=c11 -Werror` without `-Wpedantic`. They run in every build directory, so with both host compilers, and the regex must match the diagnostics of both GCC and Clang.
 
 | ID | Bad configuration | Expected message (regex) |
 | --- | --- | --- |
@@ -720,7 +772,7 @@ Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake tar
 
 | ID | Requirement |
 | --- | --- |
-| NH-01 | Build the library in release mode (`-O2`, no coverage, no sanitizers, `-fno-stack-protector`) for configurations `default` and `debug`. Run `nm -u` on the object file. The set of undefined symbols must be a subset of `{memcpy, memset}` (plus the test hooks `ts_assert_fail`, `ts_lock_enter`, `ts_lock_exit` in `debug`). Any other symbol fails the check, and the script prints it. |
+| NH-01 | Host check (the cross-target equivalent is XC-02). Build the library in release mode (`-O2`, no coverage, no sanitizers, `-fno-stack-protector`) for configurations `default` and `debug`. Run `nm -u` on the object file. The set of undefined symbols must be a subset of `{memcpy, memset}` (plus the test hooks `ts_assert_fail`, `ts_lock_enter`, `ts_lock_exit` in `debug`). Any other symbol fails the check, and the script prints it. |
 | NH-02 | Same check for a `debug` build that uses the **default** `BLOC_PLATFORM_ASSERT` (no test hook): undefined symbols ⊆ `{memcpy, memset}`. This proves the trapping default needs no C library. |
 | NH-03 | `grep` over `src/` and `include/` finds no `#include` other than `bloc.h`, `bloc_opt.h`, `<stddef.h>`, `<stdint.h>`, `<stdbool.h>`, `<string.h>`, and no occurrence of `malloc`, `calloc`, `realloc`, `aligned_alloc`, `free(`, `memmove`, `alloca` (not even in comments, so the check stays a plain grep; `bloc_calloc` is matched as a whole word and allowed). |
 
@@ -730,36 +782,62 @@ Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake tar
 | --- | --- |
 | SAN-01 | Every coverage-gated configuration built with Clang and `-fsanitize=address,undefined -fno-sanitize-recover=all`; all tests pass with zero reports. |
 | SAN-02 | The `pthread` configuration built with `-fsanitize=thread`; TS-04 passes with zero reports. |
+| SAN-03 | Same as SAN-01 with GCC (`-fsanitize=address,undefined -fno-sanitize-recover=all`). |
 
-### 9.3 Compilers
-
-| ID | Requirement |
-| --- | --- |
-| CC-01 | All configurations build and pass with GCC and with Clang at the flags of section 3.3. |
-| CC-02 | Optional 32-bit job (`-m32`, needs `gcc-multilib`): `default` configuration passes; `sizeof(struct bloc_handle) == 12` there. |
-
-### 9.4 Embedded cross-compile (optional, recommended)
+### 9.3 Host compilers (tier 1)
 
 | ID | Requirement |
 | --- | --- |
-| XC-01 | `arm-none-eabi-gcc -mcpu=cortex-m0 -mthumb -Os -std=c11` compiles `src/bloc.c` in `default` and `debug` (default assert) configurations without warnings; NH-01 symbol check passes on the object; `arm-none-eabi-size` output is printed in CI. |
+| CC-01 | All seven configurations build without warnings and pass all tests, including compile-fail tests, with GCC and with Clang at Debug (`-O0`). |
+| CC-02 | Optional 32-bit job (`-m32`, needs `gcc-multilib`, which is not in the devcontainer): `default` configuration passes; `sizeof(struct bloc_handle) == 12` there. |
+| CC-03 | Configurations `default`, `debug` and `nochecks` additionally pass with both compilers at Release (`-O2`) and MinSizeRel (`-Os`). This catches optimization-dependent undefined behaviour in the configuration used for footprint measurement. |
+
+### 9.4 Cross compilers (tier 2, `scripts/cross_check.sh`)
+
+The script loops over the tier-2 rows of section 3.6 × the applicable configurations. It calls the compilers directly on the single translation unit (no CMake toolchain files) and prints one result line per combination. It exits non-zero if any combination fails, and skips a compiler with a visible `SKIP` line only if it is not installed. In CI and in the devcontainer every compiler is required.
+
+| ID | Requirement |
+| --- | --- |
+| XC-01 | `src/bloc.c` compiles with zero warnings (`-Werror`, flags of section 3.3) for every tier-2 target and every applicable configuration. |
+| XC-02 | `nm -u` on each object lists only `memcpy`, `memset` and the test hooks of the configuration (`ts_assert_fail`, `ts_lock_enter`, `ts_lock_exit`). With `BLOC_DEBUG = 1`, the target's unsigned division and modulo helpers are also allowed (`__aeabi_uidiv`, `__aeabi_uidivmod`, `__udivsi3`, `__umodsi3`, `__udivmodhi4`, `__udivmodsi4`). Any other symbol fails and is printed. A debug build with the default `BLOC_PLATFORM_ASSERT` is checked too (NH-02 equivalent). |
+| XC-03 | Same as XC-01 and XC-02 with Clang for its tier-2 targets. |
+| XC-04 | AVR: the `wide` configuration (`BLOC_SIZE_T uint32_t` with a 16-bit `size_t`) fails to compile with `BLOC_SIZE_T must not be wider than size_t`. This is a real-target counterpart to CF-09. |
+| XC-05 | `test/target/layout_static.c` compiles for every tier-2 target and configuration. It contains the compile-time parts of CFG-01..07, CFG-09 and CFG-11 as `_Static_assert`s, with the expected values computed from `sizeof`, `_Alignof` and the spec formulas. This proves the layout macros on 8-, 32- and 64-bit targets without executing anything. |
+
+### 9.5 Code footprint (`scripts/check_size.sh`)
+
+Measurement follows spec section 17. The script compiles `src/bloc.c` for each target, compiler and configuration in the table below. It records `.text`, `.rodata`, `.data` and `.bss` of the object (summing all `*.text*` and `*.rodata*` input sections), plus per-function sizes from `nm --size-sort`.
+
+Measured matrix:
+- Targets: all tier-2 targets of section 3.6, plus host x86-64 for information.
+- Configurations: `default` (no config header) and `nochecks`, which carry the spec budgets on ARM; also `debug` with the default assert, `wide` (except AVR), and a thread-safe configuration `cfg_size_ts.h` that defines PRIMASK-based protect macros with inline assembly, as in spec section 12 (ARM M-profile only).
+
+| ID | Requirement |
+| --- | --- |
+| FP-01 | Report: a Markdown table `build/size/report.md` with one row per target × compiler × configuration (`.text`, `.rodata`, `.data`, `.bss`) and the ten largest functions per ARM row. It is printed to the console and uploaded as a CI artifact. |
+| FP-02 | Spec budgets: with `arm-none-eabi-gcc`, `.text` of `default` and `nochecks` on ARMv6-M (`cortex-m0plus`) and ARMv7-M (`cortex-m3`) does not exceed the budgets of spec section 17. Exceeding them fails. |
+| FP-03 | Section rules: `.data == 0` and `.bss == 0` for every row; `.rodata == 0` for every row with `BLOC_DEBUG = 0`. |
+| FP-04 | Regression baseline: `scripts/size_baseline.txt` stores one line per measured row (`target compiler config compiler-version text-bytes`). The check fails if `.text` is larger than the baseline. If it is smaller, the script prints a reminder to lower the baseline; the lower value must be committed in the same phase. If the compiler version differs from the recorded one, the row is reported but not gated, so developers with other toolchains get no false failures. CI uses the devcontainer versions, so it is always gated. |
+| FP-05 | Dead-stripping: `test/size/min_app.c` calls only `bloc_pool_init`, `bloc_alloc` and `bloc_release`. Linked for ARMv6-M with `-ffunction-sections -Wl,--gc-sections --specs=nosys.specs`, the final ELF contains no other `bloc_` function (`nm` check), and its BLOC contribution is smaller than the FP-02 measurement of the full API. |
+| FP-06 | Size and correctness are measured on identical code. The footprint objects use the same sources and configurations as the tier-1 tests; CC-03 runs those configurations at `-Os` on the host. |
 
 ---
 
 ## 10. Continuous integration (`.github/workflows/ci.yml`)
 
-Runner: `ubuntu-24.04`. Install `cmake`, `gcc`, `clang`, `python3-pip`; `pip install gcovr`. Jobs:
+Runner: `ubuntu-latest` with `container: ubuntu:26.04`, so compiler versions match the devcontainer and the footprint baseline (FP-04). Install the same apt packages as `.devcontainer/Dockerfile`: `build-essential`, `clang`, `cmake`, `ninja-build`, `gcovr`, `gcc-arm-none-eabi`, `libnewlib-arm-none-eabi`, `gcc-avr`, `binutils-avr`, `avr-libc`, `gcc-riscv64-unknown-elf`, `picolibc-riscv64-unknown-elf`. Jobs:
 
 | Job | Matrix | Steps |
 | --- | --- | --- |
-| `build-test` | compiler {gcc, clang} × config {all 7} | configure, build, `ctest` |
+| `build-test` | compiler {gcc, clang} × config {all 7}, plus {default, debug, nochecks} at Release and MinSizeRel | configure, build, `ctest` (CC-01, CC-03) |
 | `coverage` | config {6 coverage-gated} | `scripts/coverage.sh <cfg>`; upload `coverage.html` as artifact |
-| `sanitize` | – | `scripts/sanitize.sh` (SAN-01, SAN-02) |
+| `sanitize` | – | `scripts/sanitize.sh` (SAN-01..03) |
 | `no-heap` | – | `scripts/check_no_heap.sh` (NH-01..03) |
-| `cross` | – | install `gcc-arm-none-eabi`; XC-01 (allowed to be skipped if the package is unavailable, but not to fail) |
+| `cross` | – | `scripts/cross_check.sh` (XC-01..05) |
+| `size` | – | `scripts/check_size.sh` (FP-01..05); upload `build/size/report.md` as artifact |
 | `format` | – | `clang-format --dry-run --Werror` over `include/ src/ test/ examples/` |
 
-All jobs except `cross` are required. `scripts/run_all.sh` runs the same steps locally.
+All jobs are required. `scripts/run_all.sh` runs the same steps locally.
 
 ---
 
@@ -767,12 +845,12 @@ All jobs except `cross` are required. `scripts/run_all.sh` runs the same steps l
 
 | Spec section | Tests |
 | --- | --- |
-| 2 No-heap, dependencies | NH-01..03, XC-01 |
-| 3 Layout, alignment | CFG-03..05, CFG-09, ALLOC-02, ALLOC-15 |
+| 2 No-heap, dependencies | NH-01..03, XC-01..03 |
+| 3 Layout, alignment | CFG-03..05, CFG-09, ALLOC-02, ALLOC-15, XC-05 |
 | 4 Pool size, storage | CFG-01, CFG-02, CFG-07, CFG-09, POOL-06..10 |
 | 5 Handle, data model | CFG-05, CFG-10, ACC-01 |
-| 6 Configuration | CFG-06, CFG-08, CF-01..10 |
-| 7 Pool lifecycle | POOL-01..23 |
+| 6 Configuration | CFG-06, CFG-08, CF-01..10, XC-04 |
+| 7 Pool lifecycle | POOL-01..23, XC-02 (no division in init) |
 | 8 Allocation | ALLOC-01..17 |
 | 9 Reference counting, sharing | REF-01..11, DBG-09, LEN-08 |
 | 10 Accessors, length ops | ACC-01..04, LEN-01..09, PRE-09 |
@@ -781,24 +859,25 @@ All jobs except `cross` are required. `scripts/run_all.sh` runs the same steps l
 | 13 Errors, validation | DBG-01..13, all CHK tests, CF-08, CF-11 |
 | 14 Invariants | MODEL-01..02, ALLOC-17, DBG-10 |
 | 15 API | CFG-10, CFG-11, CF-10 |
+| 17 Code size | FP-01..06, XC-02, CC-03 |
 
 ---
 
 ## 12. Phases
 
-Each phase implements code **and** all tests for that code, including the DBG and TS aspects of the functions it adds. The DoD of every phase from phase 2 on includes: zero warnings with GCC and Clang, all tests passing in all seven configurations, `scripts/coverage.sh` at 100 % for all code that exists so far in all six coverage configurations, guard bands and lock balance clean. Debug paths are not deferred: a function is only done when its debug branches are covered too.
+Each phase implements code **and** all tests for that code, including the DBG and TS aspects of the functions it adds. The DoD of every phase from phase 2 on includes: zero warnings with every compiler of section 3.6, all tests passing in all seven configurations with GCC and Clang, `scripts/cross_check.sh` green, `scripts/check_size.sh` report generated (informational until phase 4), `scripts/coverage.sh` at 100 % for all code that exists so far in all six coverage configurations, guard bands and lock balance clean. Debug paths are not deferred: a function is only done when its debug branches are covered too.
 
 ### Phase 0 — Scaffolding
 
 Work:
-- Directory layout (section 2), top-level and test `CMakeLists.txt`, `CMakePresets.json` with presets `dev-<cfg>` (Debug, GCC) and `cov-<cfg>` (coverage) for all seven configurations.
+- Directory layout (section 2), top-level and test `CMakeLists.txt`, `CMakePresets.json` with the presets of section 3.2 for GCC and Clang and all seven configurations.
 - Unity via `FetchContent` (v2.6.1).
 - Test support library (section 5) complete, with its own self-tests (`test_support.c`: guard band detection, assertion bookkeeping, lock tracer errors).
 - All seven `test/configs/cfg_*.h`.
 - Stub `include/bloc.h`, `include/bloc_opt.h` and `src/bloc.c`. An empty translation unit is not valid ISO C under `-Wpedantic`, so the stub `bloc.c` contains one internal declaration, e.g. `typedef int bloc_i_translation_unit_not_empty;`.
-- `scripts/*.sh` skeletons, `.clang-format`, CI workflow with the jobs of section 10 (coverage and no-heap jobs informational until phase 2).
+- `scripts/*.sh` skeletons, including `cross_check.sh` (compiler detection and the target table of section 3.6) and `check_size.sh` (report only). Also `.clang-format` and the CI workflow with the jobs of section 10, running in the `ubuntu:26.04` container. The coverage, no-heap and cross jobs are informational until phase 2, the size job until phase 6.
 
-DoD: `ctest` runs `test_support` green in all configurations; CI pipeline runs.
+DoD: `ctest` runs `test_support` green in all configurations with GCC and Clang; `cross_check.sh` compiles the stub `bloc.c` for every tier-2 target; CI pipeline runs.
 
 Commit: `phase 0: project scaffolding, test support and CI`
 
@@ -806,9 +885,9 @@ Commit: `phase 0: project scaffolding, test support and CI`
 
 Work: complete `bloc_opt.h` and `bloc.h` (sections 4.1 and 4.2). `bloc.c` still has no function bodies; only `test_support.c`, `test_layout.c` and the compile-fail tests are built. The coverage gate does not apply yet because there is no executable library code.
 
-Tests: CFG-01..11, CF-01..11.
+Tests: CFG-01..11, CF-01..11, XC-04, XC-05.
 
-DoD: all CFG and CF tests pass in all configurations, zero warnings.
+DoD: all CFG and CF tests pass in all configurations with GCC and Clang; XC-04 and XC-05 pass for every tier-2 target; zero warnings.
 
 Commit: `phase 1: public headers, layout macros, compile-time validation`
 
@@ -834,7 +913,9 @@ Commit: `phase 3: set_len, add_header, remove_header`
 
 Work: `bloc_copy_from`, `bloc_copy_to`, `bloc_copy`, `bloc_append`, `bloc_append_data`, `bloc_prepend`, `bloc_prepend_data`.
 
-Tests: CPY-01..12, APP-01..07, PRE-01..09, ACC-01 completion; DBG-01..06, DBG-08 and DBG-09 rows for these functions; TS-01 rows.
+Tests: CPY-01..12, APP-01..07, PRE-01..09, ACC-01 completion; DBG-01..06, DBG-08 and DBG-09 rows for these functions; TS-01 rows. With the API complete: FP-01..03 and FP-05.
+
+Additional DoD: the spec budgets (FP-02) are met. A size-reduction pass is done (section 4.6), comparing per-function sizes on ARMv6-M and ARMv7-M, before `scripts/size_baseline.txt` is created from the measured values. If a budget cannot be met without violating another rule, record it in `docs/OPEN_QUESTIONS.md` (section 1.3) instead of committing.
 
 Commit: `phase 4: copy, append and prepend`
 
@@ -848,18 +929,18 @@ Commit: `phase 5: cross-cutting debug, thread-safety and model-based tests`
 
 ### Phase 6 — Hardening and enforced gates
 
-Work: `scripts/sanitize.sh`, `scripts/check_no_heap.sh`, optional cross-compile job; make the CI `coverage`, `sanitize` and `no-heap` jobs required and blocking. Confirm Q-02: `grep -rnE "LCOV_EXCL|GCOVR_EXCL" src include test` returns nothing.
+Work: `scripts/sanitize.sh`, `scripts/check_no_heap.sh`, the `-O2`/`-Os` host builds (CC-03), the FP-04 baseline gate; make the CI `coverage`, `sanitize`, `no-heap`, `cross` and `size` jobs required and blocking. Confirm Q-02: `grep -rnE "LCOV_EXCL|GCOVR_EXCL" src include test` returns nothing.
 
-Tests: SAN-01..02, NH-01..03, CC-01..02, XC-01.
+Tests: SAN-01..03, NH-01..03, CC-01..03, XC-01..05, FP-01..06.
 
 DoD: the full CI pipeline is green with all gates blocking.
 
-Commit: `phase 6: sanitizers, no-heap verification and enforced CI gates`
+Commit: `phase 6: sanitizers, no-heap, cross-compiler and footprint gates`
 
 ### Phase 7 — Documentation and examples
 
 Work:
-- `README.md`: purpose, feature list, the no-heap guarantee, quick start (pool storage, init, alloc with headroom, append, add_header, release), configuration table (link to spec section 6), how to build and run tests, coverage and sanitizer scripts, license.
+- `README.md`: purpose, feature list, the no-heap guarantee, supported compilers and targets (section 3.6), a footprint table from `build/size/report.md`, quick start (pool storage, init, alloc with headroom, append, add_header, release), configuration table (link to spec section 6), how to build and run tests, coverage and sanitizer scripts, license.
 - `examples/basic.c` and `examples/bloc_opts_example.h`, built in CI with the `default` configuration.
 - Doxygen comments complete for every public symbol.
 
@@ -869,10 +950,12 @@ Commit: `phase 7: README, examples and API documentation`
 
 ## 13. Definition of Done (project)
 
-- [ ] All 22 public functions implemented as specified in `docs/BLOC_SPEC.md` revision 3.
+- [ ] All 22 public functions implemented as specified in `docs/BLOC_SPEC.md` revision 4.
 - [ ] Every test ID in section 8 exists as a test function and passes in every configuration where its tag applies.
 - [ ] 100 % line, branch and function coverage of `src/bloc.c` in each of the six coverage configurations, without exclusion markers.
-- [ ] Zero warnings with GCC and Clang; clang-format clean.
+- [ ] Zero warnings with every compiler and target of section 3.6; clang-format clean.
+- [ ] Cross-compile matrix XC-01..05 green.
+- [ ] Footprint within the spec section 17 budgets on ARMv6-M and ARMv7-M; FP-01..06 green; `scripts/size_baseline.txt` committed.
 - [ ] ASan/UBSan and TSan runs clean.
 - [ ] No-heap check NH-01..03 green; the library references only `memcpy` and `memset`.
 - [ ] CI pipeline green on the default branch.

@@ -1,6 +1,6 @@
 # BLOC — Buffer Lifetime & Ownership Control
 
-Specification V1, revision 3 · 2026-10-03 · Andreas Steinbart
+Specification V1, revision 4 · 2026-10-03 · Andreas Steinbart
 
 This document is normative. Words such as *must*, *must not* and *may* are requirements on the implementation. Revision history is in Appendix C.
 
@@ -24,6 +24,7 @@ BLOC follows the proven parts of lwIP `pbuf` (`PBUF_POOL` allocation, headroom, 
 - Compile-time integer types for control structures.
 - No relocation, compaction or chaining in V1.
 - No OS dependency; optional locking via application-supplied macros.
+- Minimal code size, with `.text` budgets for ARMv6-M and ARMv7-M (section 17).
 
 ## 2. Memory ownership, dependencies and pool model
 
@@ -51,6 +52,8 @@ These rules are hard requirements and are verified automatically (implementation
 - BLOC sources and public headers include only `<stddef.h>`, `<stdint.h>`, `<stdbool.h>` and `<string.h>`. They must not include `<stdlib.h>`, `<stdio.h>` or `<assert.h>`. Some C libraries (e.g. newlib) allocate stdio buffers on first use, so even debug output must not go through stdio.
 - The default assertion handler (section 6) traps without calling the C library.
 - No variable-length arrays, no recursion, no floating point, no function-local `static` state.
+- With `BLOC_DEBUG = 0`, compiled BLOC code must not call compiler runtime helpers (libgcc, compiler-rt), on any target. Concretely: no integer division or modulo, no 64-bit arithmetic on targets narrower than 64 bits, no software floating point. ARMv6-M, AVR and RV32I have no hardware divider, so a single `/` or `%` would pull in a runtime helper such as `__aeabi_uidivmod`.
+- With `BLOC_DEBUG = 1`, the only runtime helpers allowed are unsigned integer division and modulo, needed by handle-validity step 5 (section 13).
 
 ## 3. Physical block layout and alignment
 
@@ -270,7 +273,7 @@ Checks run in this order; the first failing check determines the result.
 1. `pool` or `storage` is `NULL`, `element_count == 0` or `element_size == 0` → `BLOC_INVALID`.
 2. `element_size > BLOC_ELEMENT_SIZE_MAX` → `BLOC_INVALID`.
 3. `storage` not aligned to `BLOC_STORAGE_ALIGNMENT` → `BLOC_ALIGNMENT`.
-4. `storage_size / block_stride < element_count` → `BLOC_BOUNDS` (division form avoids overflow).
+4. `storage_size < element_count * block_stride` (as an exact mathematical comparison) → `BLOC_BOUNDS`. The check must neither overflow nor divide (section 2); for example, subtract `block_stride` from the remaining size once per element. Init is O(N) anyway.
 
 On success:
 
@@ -664,6 +667,47 @@ V1 deliberately excludes the following; each may be considered later but must no
 - Pointer-based subviews into another buffer
 - Moving buffers between pools
 
+## 17. Code size
+
+BLOC targets small microcontrollers, where flash is often the scarcest resource. Minimal `.text` footprint is a design requirement on a par with determinism, especially on ARMv6-M (Cortex-M0/M0+) and ARMv7-M (Cortex-M3/M4/M7).
+
+### Measurement
+
+Footprint is the full API: the sum of all `.text*` input sections of the object file built from the BLOC sources, with all public functions present. It is measured with:
+
+- `arm-none-eabi-gcc` as the reference compiler (Clang is measured too, but has no budget)
+- `-Os -mthumb -ffunction-sections -fdata-sections -std=c11`
+- `-mcpu=cortex-m0plus` for ARMv6-M and `-mcpu=cortex-m3` for ARMv7-M
+- no LTO
+
+On ARM, literal pools are part of `.text` and so count against the budget.
+
+### Budgets
+
+The budgets are upper bounds for the reference compiler. An implementation that exceeds them is defective. The implementation plan adds a stricter regression baseline that may only shrink unless an increase is justified.
+
+| Configuration | ARMv6-M (Cortex-M0+) | ARMv7-M (Cortex-M3) |
+| --- | --- | --- |
+| Defaults (`BLOC_CHECKS = 1`, `BLOC_DEBUG = 0`, `BLOC_STATS = 0`, `BLOC_THREAD_SAFE = 0`) | ≤ 1536 bytes | ≤ 1280 bytes |
+| Defaults with `BLOC_CHECKS = 0` | ≤ 1152 bytes | ≤ 960 bytes |
+
+Configurations with `BLOC_DEBUG`, `BLOC_STATS` or `BLOC_THREAD_SAFE` enabled, and other targets (ARMv7E-M, ARMv7-A/R Thumb, RV32, AVR), are measured and reported but have no budget.
+
+### Section rules
+
+- `.data` and `.bss` are `0` bytes in every configuration and on every target (BLOC has no global state, section 2).
+- With `BLOC_DEBUG = 0`, `.rodata` is `0` bytes. With `BLOC_DEBUG = 1`, `.rodata` holds only assertion messages.
+
+### Design rules
+
+1. All executable code is in one translation unit. Public headers contain no function definitions, no `static inline` functions and no function-like macros that expand to statements.
+2. Each public function is self-contained at link level. There are no function-pointer tables, no constructors and no cross-references that would keep unused API functions alive. Built with `-ffunction-sections` and linked with `--gc-sections`, an application pays only for the functions it calls plus their internal helpers.
+3. No compiler runtime helpers (section 2). In particular, there is no division or modulo outside `BLOC_DEBUG` code.
+4. Disabled features compile to nothing (section 6).
+5. Shared logic, such as payload address computation or the common part of append/prepend/copy, is factored into internal `static` helpers wherever that reduces measured size. The compiler may inline them.
+6. Per-buffer arithmetic uses the narrowest type that is correct. `size_t` is used only where section 6 requires it.
+7. Footprint is a review criterion. A change that increases the measured size must be justified in its commit message.
+
 ## Appendix A: Mapping to lwIP pbuf
 
 BLOC corresponds to a single, unchained `PBUF_POOL` pbuf with caller-owned pools.
@@ -726,3 +770,4 @@ All 26 findings of the first review are resolved; four were design decisions by 
 | 1 | – | First draft (47 sections) |
 | 2 | 2026-10-03 | Review resolved (Appendix B), API revised (section 15) |
 | 3 | 2026-10-03 | No-heap and libc dependency rules (section 2); `BLOC_ASSERT(x)` replaced by lwIP-style `BLOC_PLATFORM_ASSERT(msg)` with a libc-free trapping default; `BLOC_DEBUG` requires `BLOC_CHECKS`; exact static-assert messages; `BLOC_ELEMENT_SIZE_MAX` and `*_MAX` constants; pool unchanged on failed init; bail/continue semantics after a returning assertion; handle-validity steps and check order; asserts never under lock; runtime invariant assert reduced to the O(1) one; header split into `bloc.h` and `bloc_opt.h` |
+| 4 | 2026-10-03 | Code-size requirement with `.text` budgets for ARMv6-M and ARMv7-M (section 17); no compiler runtime helpers without `BLOC_DEBUG` (section 2); `bloc_pool_init` size check without division (section 7) |
