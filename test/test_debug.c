@@ -2,7 +2,8 @@
  * Debug check tests (tag DBG, implementation plan, section 8.10), the rows for the functions that
  * exist at this stage: every function that takes a handle (DBG-01..06), retain and release
  * (DBG-07), the overlap checks (DBG-08), the shared-mutation rows (DBG-09) and the release
- * invariant (DBG-10).
+ * invariant (DBG-10). DBG-11 (a representative CHK failure per function), DBG-12 (no assertion
+ * with the lock held) and DBG-13 (valid runtime conditions never assert) complete the suite.
  *
  * The suite is compiled only in BLOC_DEBUG configurations.
  */
@@ -483,6 +484,246 @@ void test_DBG_10_release_invariant(void)
     TEST_ASSERT_EQUAL_UINT(4u, bloc_pool_free_count(&pool));
 }
 
+/* --- DBG-11 ------------------------------------------------------------------------------- */
+
+/*
+ * One representative CHK failure per public function, and per kind of failure (NULL, bounds,
+ * not initialized, free block): exactly one assertion and the documented return value. The
+ * sibling tests of sections 8.2 to 8.9 check the complete lists of failures.
+ */
+#define ASSERT_STATUS(expected, call)                                                              \
+    do {                                                                                           \
+        bloc_status_t r_ = BLOC_OK;                                                                \
+        TS_EXPECT_ASSERT(r_ = (call));                                                             \
+        TEST_ASSERT_EQUAL_INT_MESSAGE((int)(expected), (int)r_, #call);                            \
+    } while (0)
+
+void test_DBG_11_one_assertion_per_chk_failure(void)
+{
+    bloc_pool_t pool;
+    bloc_pool_t other_pool;
+    static bloc_pool_t uninit;
+#if BLOC_STATS
+    bloc_pool_stats_t stats;
+#endif
+    bloc_handle_t b;
+    bloc_handle_t o;
+    bloc_handle_t free_block;
+    bloc_handle_t h = NULL;
+    uint8_t *st;
+    const size_t size = BLOC_POOL_SIZE(2, 16);
+    const size_t e = ts_element_size_aligned();
+    const bloc_size_t big = BLOC_SIZE_MAX;
+    uint8_t ext[8] = {0u};
+    uint8_t out[8];
+
+    memset(&uninit, 0, sizeof(uninit));
+    st = ts_storage(size + 1u, 0u);
+    TEST_ASSERT_NOT_NULL(st);
+
+    /* pool lifecycle */
+    ASSERT_STATUS(BLOC_INVALID, bloc_pool_init(NULL, st, size, 2u, 16u));
+    ASSERT_STATUS(BLOC_INVALID, bloc_pool_init(&pool, NULL, size, 2u, 16u));
+    ASSERT_STATUS(BLOC_INVALID, bloc_pool_init(&pool, st, size, 0u, 16u));
+    ASSERT_STATUS(BLOC_INVALID, bloc_pool_init(&pool, st, size, 2u, 0u));
+    ASSERT_STATUS(BLOC_ALIGNMENT, bloc_pool_init(&pool, st + 1, size, 2u, 16u));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_pool_init(&pool, st, size - 1u, 2u, 16u));
+    ASSERT_STATUS(BLOC_INVALID, bloc_pool_deinit(NULL));
+    ASSERT_STATUS(BLOC_INVALID, bloc_pool_deinit(&uninit));
+    TS_EXPECT_ASSERT(TEST_ASSERT_EQUAL_UINT(0u, bloc_pool_free_count(NULL)));
+#if BLOC_STATS
+    ASSERT_STATUS(BLOC_INVALID, bloc_pool_get_stats(NULL, &stats));
+    ASSERT_STATUS(BLOC_INVALID, bloc_pool_get_stats(&uninit, &stats));
+#endif
+
+    ts_pool_setup(&pool, 2u, (bloc_size_t)e);
+    ts_pool_setup(&other_pool, 1u, (bloc_size_t)e);
+#if BLOC_STATS
+    ASSERT_STATUS(BLOC_INVALID, bloc_pool_get_stats(&pool, NULL));
+#endif
+
+    /* allocation */
+    TS_EXPECT_ASSERT(h = bloc_alloc(NULL, 0u));
+    TEST_ASSERT_NULL(h);
+    TS_EXPECT_ASSERT(h = bloc_alloc(&uninit, 0u));
+    TEST_ASSERT_NULL(h);
+    TS_EXPECT_ASSERT(h = bloc_calloc(NULL, 0u));
+    TEST_ASSERT_NULL(h);
+    TS_EXPECT_ASSERT(h = bloc_calloc(&uninit, 0u));
+    TEST_ASSERT_NULL(h);
+
+    b = bloc_alloc(&pool, (bloc_size_t)(4u * BLOC_PAYLOAD_ALIGNMENT));
+    o = bloc_alloc(&other_pool, 0u);
+    TEST_ASSERT_NOT_NULL(b);
+    TEST_ASSERT_NOT_NULL(o);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_set_len(b, 4u));
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_set_len(o, 4u));
+    free_block = ts_block(&pool, 1u);
+    TEST_ASSERT_EQUAL_UINT(0u, free_block->refcount);
+
+    /* reference counting */
+    ASSERT_STATUS(BLOC_INVALID, bloc_retain(NULL));
+    ASSERT_STATUS(BLOC_INVALID, bloc_retain(free_block));
+    ASSERT_STATUS(BLOC_INVALID, bloc_release(free_block));
+
+    /* accessors */
+    TS_EXPECT_ASSERT(TEST_ASSERT_NULL(bloc_data(NULL)));
+    TS_EXPECT_ASSERT(TEST_ASSERT_EQUAL_UINT(0u, bloc_len(NULL)));
+    TS_EXPECT_ASSERT(TEST_ASSERT_EQUAL_UINT(0u, bloc_headroom(NULL)));
+    TS_EXPECT_ASSERT(TEST_ASSERT_EQUAL_UINT(0u, bloc_tailroom(NULL)));
+
+    /* length operations */
+    ASSERT_STATUS(BLOC_INVALID, bloc_set_len(NULL, 0u));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_set_len(b, big));
+    ASSERT_STATUS(BLOC_INVALID, bloc_add_header(NULL, 0u));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_add_header(b, big));
+    ASSERT_STATUS(BLOC_INVALID, bloc_remove_header(NULL, 0u));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_remove_header(b, big));
+
+    /* copy */
+    ASSERT_STATUS(BLOC_INVALID, bloc_copy_from(NULL, ext, 0u));
+    ASSERT_STATUS(BLOC_INVALID, bloc_copy_from(b, NULL, 0u));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_copy_from(b, ext, big));
+    ASSERT_STATUS(BLOC_INVALID, bloc_copy_to(NULL, out, 0u, 0u));
+    ASSERT_STATUS(BLOC_INVALID, bloc_copy_to(b, NULL, 0u, 0u));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_copy_to(b, out, 0u, 5u));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_copy_to(b, out, 5u, 0u));
+    ASSERT_STATUS(BLOC_INVALID, bloc_copy(NULL, o));
+    ASSERT_STATUS(BLOC_INVALID, bloc_copy(b, NULL));
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_set_len(o, (bloc_size_t)(e - o->offset)));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_copy(b, o)); /* b has headroom: the payload does not fit */
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_set_len(o, 4u));
+
+    /* append and prepend */
+    ASSERT_STATUS(BLOC_INVALID, bloc_append(NULL, o, 0u));
+    ASSERT_STATUS(BLOC_INVALID, bloc_append(b, NULL, 0u));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_append(b, o, 5u)); /* n > src.len */
+    ASSERT_STATUS(BLOC_INVALID, bloc_append_data(NULL, ext, 0u));
+    ASSERT_STATUS(BLOC_INVALID, bloc_append_data(b, NULL, 0u));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_append_data(b, ext, big));
+    ASSERT_STATUS(BLOC_INVALID, bloc_prepend(NULL, o, 0u));
+    ASSERT_STATUS(BLOC_INVALID, bloc_prepend(b, NULL, 0u));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_prepend(b, o, 5u)); /* n > src.len */
+    ASSERT_STATUS(BLOC_INVALID, bloc_prepend_data(NULL, ext, 0u));
+    ASSERT_STATUS(BLOC_INVALID, bloc_prepend_data(b, NULL, 0u));
+    ASSERT_STATUS(BLOC_BOUNDS, bloc_prepend_data(b, ext, big));
+
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(o));
+}
+
+/* --- DBG-12 ------------------------------------------------------------------------------- */
+
+/*
+ * Every assertion of a function that takes the lock fires after the unlock. TS_EXPECT_ASSERT
+ * checks ts_assert_lock_depth for every case below, and ts_assert_check() (called by tearDown in
+ * every test of this suite) fails a test in which any assertion fired with the lock held.
+ */
+void test_DBG_12_assertions_never_fire_under_the_lock(void)
+{
+    bloc_pool_t pool;
+    static bloc_pool_t uninit;
+#if BLOC_STATS
+    bloc_pool_stats_t stats;
+#endif
+    bloc_handle_t b;
+    bloc_handle_t free_block;
+    struct bloc_handle fake;
+    bloc_handle_t h = NULL;
+    bloc_status_t r = BLOC_OK;
+
+    memset(&uninit, 0, sizeof(uninit));
+    ts_pool_setup(&pool, 3u, 16u);
+    b = bloc_alloc(&pool, 0u);
+    TEST_ASSERT_NOT_NULL(b);
+    free_block = ts_block(&pool, 2u);
+    memset(&fake, 0, sizeof(fake));
+    fake.refcount = 1u;
+    fake.link.pool = &pool;
+
+    TS_EXPECT_ASSERT(r = bloc_pool_deinit(&uninit));
+    TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)r);
+#if BLOC_STATS
+    TS_EXPECT_ASSERT(r = bloc_pool_get_stats(&uninit, &stats));
+    TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)r);
+#endif
+    TS_EXPECT_ASSERT(r = bloc_retain(free_block));
+    TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)r);
+    TS_EXPECT_ASSERT(r = bloc_release(free_block));
+    TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)r);
+    TS_EXPECT_ASSERT(r = bloc_retain(&fake));
+    TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)r);
+    TS_EXPECT_ASSERT(r = bloc_release(&fake));
+    TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)r);
+
+    /* the invariant assertions of alloc and release (steps run under the lock, assert after) */
+    pool.active_count = (bloc_count_t)pool.element_count;
+    TS_EXPECT_ASSERT(h = bloc_alloc(&pool, 0u)); /* active_count > element_count after the take */
+    TEST_ASSERT_NOT_NULL(h);
+    pool.active_count = 2u; /* restore: b and h */
+    pool.active_count = (bloc_count_t)(pool.element_count + 2u);
+    TS_EXPECT_ASSERT(r = bloc_release(h));
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)r);
+    pool.active_count = 1u; /* restore: only b */
+
+    /* assertions of the lock-free functions fire with depth 0 as well */
+    TS_EXPECT_ASSERT(r = bloc_set_len(NULL, 0u));
+    TEST_ASSERT_EQUAL_INT(BLOC_INVALID, (int)r);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
+    TEST_ASSERT_EQUAL_UINT(0u, ts_assert_locked);
+}
+
+/* --- DBG-13 ------------------------------------------------------------------------------- */
+
+/* Valid runtime conditions never assert: empty pool, oversize headroom, overflow, BUSY. */
+void test_DBG_13_valid_runtime_conditions_never_assert(void)
+{
+    bloc_pool_t pool;
+    bloc_handle_t a;
+    bloc_handle_t b = NULL;
+    bloc_handle_t c = NULL;
+    bloc_status_t r = BLOC_INVALID;
+    const bloc_size_t e = (bloc_size_t)ts_element_size_aligned();
+
+    ts_pool_setup(&pool, 1u, e);
+    a = bloc_alloc(&pool, 0u);
+    TEST_ASSERT_NOT_NULL(a);
+
+    /* empty pool */
+    TS_EXPECT_NO_ASSERT(b = bloc_alloc(&pool, 0u));
+    TEST_ASSERT_NULL(b);
+    TS_EXPECT_NO_ASSERT(c = bloc_calloc(&pool, 0u));
+    TEST_ASSERT_NULL(c);
+    TEST_ASSERT_EQUAL_UINT(0u, bloc_pool_free_count(&pool));
+
+    /* BUSY deinit */
+    TS_EXPECT_NO_ASSERT(r = bloc_pool_deinit(&pool));
+    TEST_ASSERT_EQUAL_INT(BLOC_BUSY, (int)r);
+
+    /* refcount overflow */
+    a->refcount = BLOC_REFCOUNT_MAX;
+    TS_EXPECT_NO_ASSERT(r = bloc_retain(a));
+    TEST_ASSERT_EQUAL_INT(BLOC_OVERFLOW, (int)r);
+    TEST_ASSERT_EQUAL_UINT(BLOC_REFCOUNT_MAX, a->refcount);
+    a->refcount = 1u;
+
+    /* release of NULL is a no-op */
+    TS_EXPECT_NO_ASSERT(r = bloc_release(NULL));
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)r);
+    TS_EXPECT_NO_ASSERT(r = bloc_release(a));
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)r);
+
+    /* oversize headroom: with a free block available, no block is taken */
+    TS_EXPECT_NO_ASSERT(b = bloc_alloc(&pool, (bloc_size_t)(e + 1u)));
+    TEST_ASSERT_NULL(b);
+    TS_EXPECT_NO_ASSERT(c = bloc_calloc(&pool, BLOC_SIZE_MAX));
+    TEST_ASSERT_NULL(c);
+    TEST_ASSERT_EQUAL_UINT(1u, bloc_pool_free_count(&pool));
+
+    TS_EXPECT_NO_ASSERT(r = bloc_pool_deinit(&pool));
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)r);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -497,6 +738,9 @@ int main(void)
     RUN_TEST(test_DBG_08_external_pointer_overlap);
     RUN_TEST(test_DBG_09_shared_mutation);
     RUN_TEST(test_DBG_10_release_invariant);
+    RUN_TEST(test_DBG_11_one_assertion_per_chk_failure);
+    RUN_TEST(test_DBG_12_assertions_never_fire_under_the_lock);
+    RUN_TEST(test_DBG_13_valid_runtime_conditions_never_assert);
     return UNITY_END();
 }
 

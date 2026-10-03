@@ -7,6 +7,7 @@
 #define TS_LOCK_H
 
 extern int ts_lock_depth;                 /* current lock depth                      */
+extern int ts_lock_max_depth;             /* highest depth since the last reset      */
 extern unsigned ts_lock_enters;           /* number of ts_lock_enter() calls         */
 extern unsigned ts_lock_nesting_errors;   /* enter while already holding the lock    */
 extern unsigned ts_lock_token_errors;     /* exit with a wrong token                 */

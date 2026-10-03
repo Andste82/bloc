@@ -223,6 +223,36 @@ void test_TS_assert_expect_assert_rejects_assert_under_lock(void)
     ts_lock_reset();
 }
 
+void test_TS_assert_check_fails_for_assertion_under_lock(void)
+{
+    g_token = ts_lock_enter();
+    ts_assert_fail("under lock");
+    ts_lock_exit(g_token);
+    TEST_ASSERT_EQUAL_UINT(1u, ts_assert_locked);
+    /* even an assertion that was expected is a failure when it fired with the lock held */
+    ts_assert_unexpected = 0u;
+    TS_EXPECT_FAIL(ts_assert_check());
+
+    ts_assert_reset();
+    TEST_ASSERT_EQUAL_UINT(0u, ts_assert_locked);
+    ts_assert_check();
+}
+
+void test_TS_lock_tracks_the_maximum_depth(void)
+{
+    TEST_ASSERT_EQUAL_INT(0, ts_lock_max_depth);
+    g_token = ts_lock_enter();
+    ts_lock_exit(g_token);
+    TEST_ASSERT_EQUAL_INT(1, ts_lock_max_depth);
+
+    g_token = ts_lock_enter();
+    (void)ts_lock_enter(); /* nesting error, depth 2 */
+    TEST_ASSERT_EQUAL_INT(2, ts_lock_max_depth);
+    ts_lock_reset();
+    TEST_ASSERT_EQUAL_INT(0, ts_lock_max_depth);
+    ts_lock_check();
+}
+
 void test_TS_assert_expect_no_assert(void)
 {
     TS_EXPECT_NO_ASSERT((void)0);
@@ -482,6 +512,8 @@ int main(void)
     RUN_TEST(test_TS_assert_expect_assert_rejects_none_and_two);
     RUN_TEST(test_TS_assert_expect_assert_rejects_assert_under_lock);
     RUN_TEST(test_TS_assert_expect_no_assert);
+    RUN_TEST(test_TS_assert_check_fails_for_assertion_under_lock);
+    RUN_TEST(test_TS_lock_tracks_the_maximum_depth);
     RUN_TEST(test_TS_lock_enter_exit_is_balanced);
     RUN_TEST(test_TS_lock_detects_nesting);
     RUN_TEST(test_TS_lock_detects_wrong_token);

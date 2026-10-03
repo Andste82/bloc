@@ -216,8 +216,8 @@ jobs:
   ci-ok:
     if: always()
     # Final state after phase 6: [gate, host, emulated, baremetal, coverage, sanitize, lto, no-heap,
-    # fetchcontent, fetchcontent-online]. Phase 2 requires the jobs below.
-    needs: [gate, host, emulated, baremetal, coverage, no-heap, fetchcontent]
+    # fetchcontent, fetchcontent-online]. Phase 5 requires the jobs below.
+    needs: [gate, host, emulated, baremetal, coverage, sanitize, lto, no-heap, fetchcontent]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
