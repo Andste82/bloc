@@ -62,7 +62,14 @@ foreach(_src IN LISTS _bloc_test_sources)
     continue()
   endif()
   bloc_add_test(${_name} "${_src}")
+  if(_name STREQUAL "test_layout")
+    # The compile-time layout checks of the cross targets (XC-05) also run on every host and
+    # emulated build, in every configuration, including the ones tier 2 does not build.
+    target_sources(${_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/target/layout_static.c")
+  endif()
 endforeach()
+
+add_subdirectory(compile_fail)
 
 # EM-04: only built when the target table provides the expectations.
 if(NOT BLOC_EXPECT_BIG_ENDIAN STREQUAL "" OR NOT BLOC_EXPECT_PTR_BITS STREQUAL "")

@@ -12,43 +12,59 @@
 
 /* --- Defaults --------------------------------------------------------------------------- */
 
+/** Minimum alignment of every block start; a power of two (default 4). */
 #ifndef BLOC_BLOCK_ALIGNMENT
 #define BLOC_BLOCK_ALIGNMENT 4
 #endif
 
+/** Alignment of the data area start; a power of two, 1 disables it (default 4). */
 #ifndef BLOC_PAYLOAD_ALIGNMENT
 #define BLOC_PAYLOAD_ALIGNMENT 4
 #endif
 
+/** Unsigned type of element sizes, offsets and lengths (default uint16_t). */
 #ifndef BLOC_SIZE_T
 #define BLOC_SIZE_T uint16_t
 #endif
 
+/** Unsigned type of element counts, active count and statistics (default uint8_t). */
 #ifndef BLOC_COUNT_T
 #define BLOC_COUNT_T uint8_t
 #endif
 
+/** Unsigned type of the reference count (default uint8_t). */
 #ifndef BLOC_REFCOUNT_T
 #define BLOC_REFCOUNT_T uint8_t
 #endif
 
+/**
+ * 1 = protect pool and refcount updates with BLOC_PROTECT (needs BLOC_DECL_PROTECT, BLOC_PROTECT
+ * and BLOC_UNPROTECT; default 0).
+ */
 #ifndef BLOC_THREAD_SAFE
 #define BLOC_THREAD_SAFE 0
 #endif
 
+/** 1 = parameter and bounds checks that return status codes (default 1). */
 #ifndef BLOC_CHECKS
 #define BLOC_CHECKS 1
 #endif
 
+/** 1 = assertions for programming errors; requires BLOC_CHECKS (default 0). */
 #ifndef BLOC_DEBUG
 #define BLOC_DEBUG 0
 #endif
 
+/** 1 = high-water mark and allocation-failure counter (default 0). */
 #ifndef BLOC_STATS
 #define BLOC_STATS 0
 #endif
 
-/* Default assertion handler: traps without calling the C library. */
+/**
+ * Called when a debug assertion has failed (BLOC_DEBUG only). The default traps without calling
+ * the C library; an application may route it to a fault handler or logger. If it returns, BLOC
+ * continues as described in the specification, section 13.
+ */
 #ifndef BLOC_PLATFORM_ASSERT
 #if defined(__GNUC__) || defined(__clang__)
 #define BLOC_PLATFORM_ASSERT(msg)                                                                  \
