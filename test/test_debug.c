@@ -1,8 +1,8 @@
 /*
  * Debug check tests (tag DBG, implementation plan, section 8.10), the rows for the functions that
- * exist at this stage: the accessors (DBG-01..06), retain and release (DBG-07) and the release
- * invariant (DBG-10). The function table below grows with every phase that adds a function that
- * takes a handle.
+ * exist at this stage: the accessors and length operations (DBG-01..06), retain and release
+ * (DBG-07), the shared-mutation rows (DBG-09) and the release invariant (DBG-10). The function
+ * table below grows with every phase that adds a function that takes a handle.
  *
  * The suite is compiled only in BLOC_DEBUG configurations.
  */
@@ -28,20 +28,35 @@ void tearDown(void) { ts_test_teardown(); }
 
 /* --- Table of the functions that take a handle (except retain and release) ------------------ */
 
-/* Every wrapper returns the function result as an integer; the bail value is always 0. */
+/*
+ * Every wrapper returns the function result as an integer. The bail value is 0 for the accessors
+ * and BLOC_INVALID for the functions that return a status.
+ */
 static uintptr_t call_data(bloc_handle_t b) { return (uintptr_t)bloc_data(b); }
 static uintptr_t call_len(bloc_handle_t b) { return (uintptr_t)bloc_len(b); }
 static uintptr_t call_headroom(bloc_handle_t b) { return (uintptr_t)bloc_headroom(b); }
 static uintptr_t call_tailroom(bloc_handle_t b) { return (uintptr_t)bloc_tailroom(b); }
 
+static uintptr_t call_set_len(bloc_handle_t b) { return (uintptr_t)bloc_set_len(b, 0u); }
+static uintptr_t call_add_header(bloc_handle_t b) { return (uintptr_t)bloc_add_header(b, 0u); }
+static uintptr_t call_remove_header(bloc_handle_t b)
+{
+    return (uintptr_t)bloc_remove_header(b, 0u);
+}
+
 static const struct {
     const char *name;
     uintptr_t (*call)(bloc_handle_t);
+    uintptr_t bail; /* result when the handle is rejected */
+    uintptr_t ok;   /* result for a valid handle (status functions) */
 } g_functions[] = {
-    {"bloc_data", call_data},
-    {"bloc_len", call_len},
-    {"bloc_headroom", call_headroom},
-    {"bloc_tailroom", call_tailroom},
+    {"bloc_data", call_data, 0u, 0u},
+    {"bloc_len", call_len, 0u, 0u},
+    {"bloc_headroom", call_headroom, 0u, 0u},
+    {"bloc_tailroom", call_tailroom, 0u, 0u},
+    {"bloc_set_len", call_set_len, (uintptr_t)BLOC_INVALID, (uintptr_t)BLOC_OK},
+    {"bloc_add_header", call_add_header, (uintptr_t)BLOC_INVALID, (uintptr_t)BLOC_OK},
+    {"bloc_remove_header", call_remove_header, (uintptr_t)BLOC_INVALID, (uintptr_t)BLOC_OK},
 };
 
 #define N_FUNCTIONS (sizeof(g_functions) / sizeof(g_functions[0]))
@@ -151,13 +166,13 @@ static void run_defect_table(enum defect d)
         struct fixture f;
         struct bloc_handle stack_fake;
         bloc_handle_t h;
-        uintptr_t r = 1u;
+        uintptr_t r = g_functions[i].bail + 1u;
 
         fixture_setup(&f);
         h = apply_defect(&f, d, &stack_fake);
         snap_fixture(&f);
         TS_EXPECT_ASSERT(r = g_functions[i].call(h));
-        if (r != 0u) {
+        if (r != g_functions[i].bail) {
             TEST_FAIL_MESSAGE(g_functions[i].name);
         }
         TS_SNAP_CHECK(&g_snap);
@@ -189,7 +204,9 @@ void test_DBG_valid_handle_passes(void)
 
         fixture_setup(&f);
         TS_EXPECT_NO_ASSERT(r = g_functions[i].call(f.real));
-        (void)r;
+        if (g_functions[i].bail != 0u) { /* status functions: BLOC_OK; accessors return data */
+            TEST_ASSERT_EQUAL_UINT(g_functions[i].ok, r);
+        }
         TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(f.real));
     }
 }
@@ -222,6 +239,45 @@ void test_DBG_07_retain_release_with_invalid_handles(void)
             TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(f.real));
         }
     }
+}
+
+/* --- DBG-09 (rows of the length operations) ---------------------------------------------- */
+
+void test_DBG_09_shared_mutation(void)
+{
+    bloc_pool_t pool;
+    bloc_handle_t b;
+    int k;
+
+    ts_pool_setup(&pool, 2u, 32u);
+    b = bloc_alloc(&pool, BLOC_PAYLOAD_ALIGNMENT);
+    TEST_ASSERT_NOT_NULL(b);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_set_len(b, 8u));
+
+    /* refcount == 1: no assertion. */
+    TS_EXPECT_NO_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_set_len(b, 8u)));
+    TS_EXPECT_NO_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_remove_header(b, 1u)));
+    TS_EXPECT_NO_ASSERT(TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_add_header(b, 1u)));
+
+    /* refcount == 2: one assertion, the operation is performed, the result is BLOC_OK. */
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_retain(b));
+    for (k = 0; k < 3; k++) {
+        bloc_status_t r = BLOC_INVALID;
+
+        if (k == 0) {
+            TS_EXPECT_ASSERT(r = bloc_set_len(b, 5u));
+            TEST_ASSERT_EQUAL_UINT(5u, bloc_len(b));
+        } else if (k == 1) {
+            TS_EXPECT_ASSERT(r = bloc_remove_header(b, 2u));
+            TEST_ASSERT_EQUAL_UINT(3u, bloc_len(b));
+        } else {
+            TS_EXPECT_ASSERT(r = bloc_add_header(b, 2u));
+            TEST_ASSERT_EQUAL_UINT(5u, bloc_len(b));
+        }
+        TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)r);
+    }
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
 }
 
 /* --- DBG-10 ------------------------------------------------------------------------------- */
@@ -258,6 +314,7 @@ int main(void)
     RUN_TEST(test_DBG_06_free_block);
     RUN_TEST(test_DBG_valid_handle_passes);
     RUN_TEST(test_DBG_07_retain_release_with_invalid_handles);
+    RUN_TEST(test_DBG_09_shared_mutation);
     RUN_TEST(test_DBG_10_release_invariant);
     return UNITY_END();
 }

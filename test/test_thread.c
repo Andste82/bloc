@@ -202,6 +202,29 @@ void test_TS_01_accessors(void)
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
 }
 
+void test_TS_01_length_operations(void)
+{
+    bloc_pool_t pool;
+    bloc_handle_t b;
+
+    ts_pool_setup(&pool, 2u, 32u);
+    b = bloc_alloc(&pool, BLOC_PAYLOAD_ALIGNMENT);
+    TEST_ASSERT_NOT_NULL(b);
+
+    ROW("set_len", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_set_len(b, 8u)));
+    ROW("remove_header", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_remove_header(b, 1u)));
+    ROW("add_header", 0, TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_add_header(b, 1u)));
+#if BLOC_CHECKS
+    ROW("set_len bounds", 0, TS_CHK_ASSERT((void)bloc_set_len(b, BLOC_SIZE_MAX)));
+    ROW("remove_header bounds", 0, TS_CHK_ASSERT((void)bloc_remove_header(b, BLOC_SIZE_MAX)));
+    ROW("add_header bounds", 0, TS_CHK_ASSERT((void)bloc_add_header(b, BLOC_SIZE_MAX)));
+    ROW("set_len NULL", 0, TS_CHK_ASSERT((void)bloc_set_len(NULL, 0u)));
+    ROW("remove_header NULL", 0, TS_CHK_ASSERT((void)bloc_remove_header(NULL, 0u)));
+    ROW("add_header NULL", 0, TS_CHK_ASSERT((void)bloc_add_header(NULL, 0u)));
+#endif
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -215,6 +238,7 @@ int main(void)
     RUN_TEST(test_TS_01_invalid_handles_lock_once);
 #endif
     RUN_TEST(test_TS_01_accessors);
+    RUN_TEST(test_TS_01_length_operations);
     return UNITY_END();
 }
 
