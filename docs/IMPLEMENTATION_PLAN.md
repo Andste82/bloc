@@ -986,7 +986,7 @@ Rationale: storage is a `uint8_t` array that the library accesses through `struc
 
 ### 9.8 FetchContent consumer smoke tests (`scripts/fetchcontent_smoke.sh`)
 
-`test/fetchcontent_smoke/` is a stand-alone consumer project. It is never added by BLOC's own `CMakeLists.txt`; it is configured from outside, like a real user project. Its `CMakeLists.txt` contains the `bloc-fetchcontent` block of section 3.8 (with `BLOC_GIT_TAG` defaulting to `master` and `BLOC_GIT_SHALLOW` to `TRUE`), an executable `smoke` from `main.c` linked to `bloc::bloc`, `enable_testing()` and `add_test(NAME smoke COMMAND smoke)`, plus the configure-time hygiene assertions of FC-02. The consumer compiles `main.c` with its own strict flags: `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Werror`.
+`test/fetchcontent_smoke/` is a stand-alone consumer project. It is never added by BLOC's own `CMakeLists.txt`; it is configured from outside, like a real user project. Its `CMakeLists.txt` contains the `bloc-fetchcontent` block of section 3.8 (with `BLOC_GIT_TAG` defaulting to `main` and `BLOC_GIT_SHALLOW` to `TRUE`), an executable `smoke` from `main.c` linked to `bloc::bloc`, `enable_testing()` and `add_test(NAME smoke COMMAND smoke)`, plus the configure-time hygiene assertions of FC-02. The consumer compiles `main.c` with its own strict flags: `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Werror`.
 
 `main.c` uses only the public API and returns a distinct non-zero code for each failed check (no `stdio`, so it also links bare-metal):
 
@@ -1010,7 +1010,7 @@ Rationale: storage is a `uint8_t` array that the library accesses through `struc
 | FC-06 | `generators` | FC-01 with the `Ninja`, `Ninja Multi-Config` (building and testing both `Debug` and `Release`) and `Unix Makefiles` generators. (CM-08) |
 | FC-07 | `cmake-floor` | FC-01 and FC-03 (`config-normal`) with CMake 3.20 (installed with `pip install "cmake==3.20.*"` into a venv) in addition to the current CMake. Proves that `cmake_minimum_required(VERSION 3.20...4.2)` is honest and that the CMP0126 guard of section 3.8 works. |
 | FC-08 | `baremetal` | The smoke project is configured with `toolchain-cortex-m0plus.cmake` (`arm-none-eabi-gcc`, `CMAKE_SYSTEM_NAME Generic`, `CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY`, `-mcpu=cortex-m0plus -mthumb`) and `smoke` is linked with `--specs=nosys.specs -Wl,--gc-sections`. It is not run; `arm-none-eabi-nm` shows `bloc_pool_init` in the ELF. (CM-08) |
-| FC-09 | `online` | Without `FETCHCONTENT_SOURCE_DIR_BLOC`: the smoke project fetches `https://github.com/Andste82/bloc.git` at `BLOC_GIT_TAG=<commit sha>` (`BLOC_GIT_SHALLOW=FALSE`, because a shallow fetch cannot target a bare commit hash), then runs FC-01. CI runs it only on pushes to `master`, on tags and on the weekly schedule, because on pull requests from forks the commit is not in the repository yet. |
+| FC-09 | `online` | Without `FETCHCONTENT_SOURCE_DIR_BLOC`: the smoke project fetches `https://github.com/Andste82/bloc.git` at `BLOC_GIT_TAG=<commit sha>` (`BLOC_GIT_SHALLOW=FALSE`, because a shallow fetch cannot target a bare commit hash), then runs FC-01. CI runs it only on pushes to `main`, on tags and on the weekly schedule, because on pull requests from forks the commit is not in the repository yet. |
 | FC-10 | `docs` | The `bloc-fetchcontent` block in `README.md` (phase 7) and the one in `test/fetchcontent_smoke/CMakeLists.txt` are identical after replacing the two variables with the README's literal values. The script extracts both blocks between the `# >>> bloc-fetchcontent` and `# <<< bloc-fetchcontent` markers and diffs them, so the documented way to consume BLOC is the tested one. |
 
 ---
@@ -1028,12 +1028,12 @@ Goal: many compilers, many architectures, many tests, on every pull request, wit
 5. **Pinned environments.** Linux jobs run in `container: ubuntu:<version>`, so compiler versions are fixed by the image, not by GitHub's `ubuntu-latest`. The reference row and every footprint job use `ubuntu:26.04` (= devcontainer, FP-04 baseline).
 6. **Robust installs.** `scripts/ci/apt_install.sh` always adds `ca-certificates git`, sets `DEBIAN_FRONTEND=noninteractive`, uses `--no-install-recommends` and retries `apt-get update && apt-get install` three times with 15 s between attempts, printing `::warning::` per failed attempt and `::error::` at the end.
 7. **Bounded jobs.** Every job has `timeout-minutes`, about four times its observed duration (set initially to gate 10, host 25, emulated 30, bare-metal 20, others 20; adjust once in phase 6 from real timings, never above 45). A hung job must fail fast instead of holding one of the account's concurrent runner slots for GitHub's default of six hours.
-8. **Cancel superseded runs.** Top-level `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: ${{ github.ref != 'refs/heads/master' }} }`. Runs on `master` are never cancelled.
+8. **Cancel superseded runs.** Top-level `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: ${{ github.ref != 'refs/heads/main' }} }`. Runs on `main` are never cancelled.
 9. **Least privilege.** Top-level `permissions: contents: read`.
 10. **One required check.** The final job `ci-ok` has `needs:` on every required job and `if: always()`, and fails if any of them failed or was cancelled. Branch protection requires only `ci-ok`. A job is *informational* while it is not listed in `ci-ok.needs`, and *required* once it is; the phases in section 12 say when each job joins.
 11. **Same scripts locally and in CI.** Workflows contain no build logic beyond calling `scripts/`. `scripts/run_all.sh` runs every tier whose tools are installed and prints `SKIP` for the rest.
 
-Triggers: `push` to `master` and tags `v*`, `pull_request` to `master`, `workflow_dispatch`, and a weekly `schedule` (catches drift in the container images and runs FC-09).
+Triggers: `push` to `main` and tags `v*`, `pull_request` to `main`, `workflow_dispatch`, and a weekly `schedule` (catches drift in the container images and runs FC-09).
 
 ### 10.2 Jobs
 
@@ -1175,7 +1175,7 @@ Commit: `phase 5: cross-cutting debug, thread-safety and model-based tests`
 
 ### Phase 6 — Hardening and enforced gates
 
-Work: complete `scripts/sanitize.sh` and `scripts/check_no_heap.sh`, the `-O2`/`-Os` host builds (CC-03), the FP-04 baseline gate, and the EM-03 symbol check. Add `fetchcontent-online` to `ci-ok.needs`; every job of section 10.2 is now required. Adjust every `timeout-minutes` to about four times the observed duration. Enable branch protection on `master` with `ci-ok` as the only required check (the repository owner does this; note it in the commit message). Confirm Q-02: `grep -rnE "LCOV_EXCL|GCOVR_EXCL" src include test` returns nothing.
+Work: complete `scripts/sanitize.sh` and `scripts/check_no_heap.sh`, the `-O2`/`-Os` host builds (CC-03), the FP-04 baseline gate, and the EM-03 symbol check. Add `fetchcontent-online` to `ci-ok.needs`; every job of section 10.2 is now required. Adjust every `timeout-minutes` to about four times the observed duration. Enable branch protection on `main` with `ci-ok` as the only required check (the repository owner does this; note it in the commit message). Confirm Q-02: `grep -rnE "LCOV_EXCL|GCOVR_EXCL" src include test` returns nothing.
 
 Tests: SAN-01..03, NH-01..03, CC-01..05, XC-01..05, FP-01..06, EM-01..04, FC-01..09.
 
@@ -1207,7 +1207,7 @@ Commit: `phase 7: README, examples and API documentation`
 - [ ] No-heap check NH-01..03 green; the library references only `memcpy` and `memset`.
 - [ ] All tier-1 host compilers (CC-01..05) and tier-1E emulated targets (EM-01..04) green; LTO-01..02 green.
 - [ ] CMake rules CM-01..10 implemented; FetchContent smoke tests FC-01..10 green, including the CMake 3.20 floor and the bare-metal consumer.
-- [ ] CI pipeline (section 10) green on `master`, with `ci-ok` as the required check and every job listed in it.
+- [ ] CI pipeline (section 10) green on `main`, with `ci-ok` as the required check and every job listed in it.
 - [ ] `docs/OPEN_QUESTIONS.md` either absent or every entry has a chosen interpretation and linked tests.
 - [ ] README and examples complete.
 
@@ -1224,17 +1224,17 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     tags: ['v*']
   pull_request:
-    branches: [master]
+    branches: [main]
   schedule:
     - cron: '17 3 * * 1'        # weekly: image drift, FC-09
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
