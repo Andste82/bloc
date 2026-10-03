@@ -1,6 +1,6 @@
 # BLOC V1 — Implementation Plan
 
-Plan revision 3 · 2026-10-03 · for `docs/BLOC_SPEC.md` revision 4
+Plan revision 3 · 2026-10-03 · for `docs/BLOC_SPEC.md` revision 5
 
 Revision 3 adds: CMake as the only build system and consumption via `FetchContent` (R-10, section 3.8, smoke tests FC-01..10 in section 9.8), and a multi-compiler, multi-architecture CI with emulated test execution (sections 3.6, 9.3, 9.6, 9.7, 10, Appendix A).
 
@@ -834,7 +834,7 @@ Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake tar
 | DBG-07 | Retain and release with each defect of DBG-01..05 → one assertion, `BLOC_INVALID`, lock depth 0 at the assertion, state unchanged. |
 | DBG-08 | Overlap: `copy_from`, `append_data`, `prepend_data` with the external pointer inside the destination write range → one assertion, `BLOC_INVALID`, no byte written. Adjacent but non-overlapping ranges (source ends exactly where the write starts, and starts exactly where it ends) → no assertion, OK. `n == 0` with a pointer inside the range → no assertion. |
 | DBG-09 | Shared mutation: every mutating function (spec section 9 list) at `refcount == 2` → one assertion, operation performed, return `BLOC_OK`. The same calls at `refcount == 1` → no assertion. |
-| DBG-10 | Release invariant: corrupt `active_count` to `element_count + 1` before a final release → one assertion after unlock, release still completes; restore. |
+| DBG-10 | Release invariant (checked after the decrement, spec section 14), two cases on a pool with `element_count < BLOC_COUNT_MAX`: (a) over-count: corrupt `active_count` to `element_count + 2` before a final release, so that it still exceeds `element_count` after the decrement; (b) underflow: corrupt `active_count` to `0` before a final release, so that the decrement wraps to `BLOC_COUNT_MAX`. Each case: one assertion after unlock, the release still completes (block freed, `BLOC_OK`); restore. |
 | DBG-11 | Every CHK failure listed in 8.2–8.9 produces exactly one assertion in this configuration (covered by those tests' DBG notes; this test re-checks a representative per function). |
 | DBG-12 | Assertions never fire with the lock held: across the whole DBG suite `ts_assert_lock_depth` is always 0. |
 | DBG-13 | Valid runtime conditions never assert: empty pool, oversize headroom, refcount overflow, `BLOC_BUSY` deinit. |
@@ -1145,7 +1145,7 @@ Commit: `phase 7: README, examples and API documentation`
 
 ## 13. Definition of Done (project)
 
-- [ ] All 22 public functions implemented as specified in `docs/BLOC_SPEC.md` revision 4.
+- [ ] All 22 public functions implemented as specified in `docs/BLOC_SPEC.md` revision 5.
 - [ ] Every test ID in section 8 exists as a test function and passes in every configuration where its tag applies.
 - [ ] 100 % line, branch and function coverage of `src/bloc.c` in each of the six coverage configurations, without exclusion markers.
 - [ ] Zero warnings with every compiler and target of section 3.6; clang-format clean.

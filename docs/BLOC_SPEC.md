@@ -2,7 +2,7 @@
 
 *Deterministic heap-free fixed-block buffers with reference counting and zero-copy headroom.*
 
-Specification V1, revision 4 · 2026-10-03 · Andreas Steinbart
+Specification V1, revision 5 · 2026-10-03 · Andreas Steinbart
 
 This document is normative. Words such as *must*, *must not* and *may* are requirements on the implementation. Revision history is in Appendix C.
 
@@ -577,7 +577,7 @@ The invariants below hold for every initialized pool at every point outside a pr
 - Free block: `refcount == 0`, linked exactly once in the free list.
 - Allocated block: `refcount >= 1`, `link.pool` is its owning pool.
 
-Only the first invariant is asserted at runtime (O(1)); the others are verified by the test suite.
+Only the first invariant is asserted at runtime (O(1)), after the increment in `bloc_alloc` and after the decrement in `bloc_release`; the others are verified by the test suite. Because `bloc_count_t` is unsigned, the check catches both an over-count and an underflow of `active_count` (a decrement from `0` wraps to `BLOC_COUNT_MAX`), except for a pool with `element_count == BLOC_COUNT_MAX`, where the wrapped value still satisfies the invariant.
 
 ### Buffer invariants
 
@@ -775,3 +775,4 @@ All 26 findings of the first review are resolved; four were design decisions by 
 | 2 | 2026-10-03 | Review resolved (Appendix B), API revised (section 15) |
 | 3 | 2026-10-03 | No-heap and libc dependency rules (section 2); `BLOC_ASSERT(x)` replaced by lwIP-style `BLOC_PLATFORM_ASSERT(msg)` with a libc-free trapping default; `BLOC_DEBUG` requires `BLOC_CHECKS`; exact static-assert messages; `BLOC_ELEMENT_SIZE_MAX` and `*_MAX` constants; pool unchanged on failed init; bail/continue semantics after a returning assertion; handle-validity steps and check order; asserts never under lock; runtime invariant assert reduced to the O(1) one; header split into `bloc.h` and `bloc_opt.h` |
 | 4 | 2026-10-03 | Code-size requirement with `.text` budgets for ARMv6-M and ARMv7-M (section 17); no compiler runtime helpers without `BLOC_DEBUG` (section 2); `bloc_pool_init` size check without division (section 7) |
+| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002) |

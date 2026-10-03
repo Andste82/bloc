@@ -470,16 +470,28 @@ void test_DBG_10_release_invariant(void)
     bloc_status_t r = BLOC_OK;
 
     ts_pool_setup(&pool, 4u, 16u);
+    TEST_ASSERT_TRUE(pool.element_count < BLOC_COUNT_MAX); /* else an underflow is undetectable */
+
+    /* (a) Over-count: after the final release, active_count still exceeds element_count. */
     b = bloc_alloc(&pool, 0u);
     TEST_ASSERT_NOT_NULL(b);
-
-    /* After the final release, active_count would still exceed element_count. */
     pool.active_count = (bloc_count_t)(pool.element_count + 2u);
     TS_EXPECT_ASSERT(r = bloc_release(b));
     TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)r); /* continue semantics: the release completes */
     TEST_ASSERT_EQUAL_UINT(0u, b->refcount);
     TEST_ASSERT_EQUAL_PTR(b, pool.free_head);
+    pool.active_count = 0u; /* restore */
+    TEST_ASSERT_EQUAL_UINT(4u, bloc_pool_free_count(&pool));
 
+    /* (b) Underflow: the decrement from 0 wraps to BLOC_COUNT_MAX. */
+    b = bloc_alloc(&pool, 0u);
+    TEST_ASSERT_NOT_NULL(b);
+    pool.active_count = 0u;
+    TS_EXPECT_ASSERT(r = bloc_release(b));
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)r);
+    TEST_ASSERT_EQUAL_UINT(0u, b->refcount);
+    TEST_ASSERT_EQUAL_PTR(b, pool.free_head);
+    TEST_ASSERT_EQUAL_UINT(BLOC_COUNT_MAX, pool.active_count);
     pool.active_count = 0u; /* restore */
     TEST_ASSERT_EQUAL_UINT(4u, bloc_pool_free_count(&pool));
 }

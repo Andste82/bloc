@@ -37,6 +37,13 @@ the interpretation that was chosen and the tests it affects.
   `element_count + 1` and the invariant is violated.
 - **Tests affected:** DBG-10 (`test/test_debug.c`). ALLOC-17 is not affected: `bloc_alloc` checks
   after the increment, and `active_count = element_count` is corrupt enough.
+- **Resolution (2026-10-03):** the chosen interpretation was right; the plan's test design was
+  wrong. Plan DBG-10 now describes two cases: (a) over-count, `active_count = element_count + 2`
+  (the case above), and (b) underflow, `active_count = 0`, where the decrement wraps to
+  `BLOC_COUNT_MAX`. Case (b) is the failure the check catches in practice, and it was not tested
+  before. `test_DBG_10_release_invariant` covers both. Spec section 14 (revision 5) now states that
+  the check runs after the increment or decrement and that it cannot see an underflow in a pool with
+  `element_count == BLOC_COUNT_MAX`.
 
 ## OQ-003 Overflow of the rounded headroom in `bloc_alloc`
 
