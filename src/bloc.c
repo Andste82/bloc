@@ -1,5 +1,6 @@
 /*
- * BLOC implementation: pool lifecycle, allocation, accessors, reference counting.
+ * BLOC implementation: pool lifecycle, allocation, accessors, reference counting and the
+ * zero-copy length operations.
  *
  * All executable code of the library lives in this translation unit. Compile-time options come
  * from bloc_opt.h. See docs/BLOC_SPEC.md for the behaviour and docs/IMPLEMENTATION_PLAN.md,
@@ -76,6 +77,16 @@ static uint8_t *bloc_i_data_start(const struct bloc_handle *b)
 
 /* Handle validity step 1 followed by steps 2 to 5. */
 #define BLOC_I_HANDLE_VALID(b) ((b)->refcount != 0u && BLOC_I_ADDR_VALID(b))
+
+/* Mutation of a shared buffer is a programming error: assert, then continue (spec section 13). */
+#define BLOC_I_SHARED_MUTATION(b, msg)                                                             \
+    do {                                                                                           \
+        if ((b)->refcount > 1u) {                                                                  \
+            BLOC_I_FAIL(msg);                                                                      \
+        }                                                                                          \
+    } while (0)
+#else
+#define BLOC_I_SHARED_MUTATION(b, msg) ((void)0)
 #endif
 
 /* --- Pool lifecycle ----------------------------------------------------------------------- */
@@ -386,4 +397,45 @@ bloc_size_t bloc_tailroom(bloc_const_handle_t b)
     BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(b), "bloc_tailroom: invalid handle", 0u);
 #endif
     return (bloc_size_t)(b->link.pool->element_size - b->offset - b->len);
+}
+
+/* --- Length operations -------------------------------------------------------------------- */
+
+bloc_status_t bloc_set_len(bloc_handle_t b, bloc_size_t len)
+{
+    BLOC_I_CHECK(b != NULL, "bloc_set_len: b is NULL", BLOC_INVALID);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(b), "bloc_set_len: invalid handle", BLOC_INVALID);
+#endif
+    BLOC_I_CHECK((size_t)len <= (size_t)b->link.pool->element_size - b->offset,
+                 "bloc_set_len: len exceeds the space after offset", BLOC_BOUNDS);
+    BLOC_I_SHARED_MUTATION(b, "bloc_set_len: buffer is shared");
+    b->len = len;
+    return BLOC_OK;
+}
+
+bloc_status_t bloc_add_header(bloc_handle_t b, bloc_size_t n)
+{
+    BLOC_I_CHECK(b != NULL, "bloc_add_header: b is NULL", BLOC_INVALID);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(b), "bloc_add_header: invalid handle", BLOC_INVALID);
+#endif
+    BLOC_I_CHECK(n <= b->offset, "bloc_add_header: n exceeds headroom", BLOC_BOUNDS);
+    BLOC_I_SHARED_MUTATION(b, "bloc_add_header: buffer is shared");
+    b->offset = (bloc_size_t)(b->offset - n);
+    b->len = (bloc_size_t)(b->len + n);
+    return BLOC_OK;
+}
+
+bloc_status_t bloc_remove_header(bloc_handle_t b, bloc_size_t n)
+{
+    BLOC_I_CHECK(b != NULL, "bloc_remove_header: b is NULL", BLOC_INVALID);
+#if BLOC_DEBUG
+    BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(b), "bloc_remove_header: invalid handle", BLOC_INVALID);
+#endif
+    BLOC_I_CHECK(n <= b->len, "bloc_remove_header: n exceeds len", BLOC_BOUNDS);
+    BLOC_I_SHARED_MUTATION(b, "bloc_remove_header: buffer is shared");
+    b->offset = (bloc_size_t)(b->offset + n);
+    b->len = (bloc_size_t)(b->len - n);
+    return BLOC_OK;
 }

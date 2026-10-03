@@ -1,8 +1,8 @@
 /*
  * Accessor tests ACC-01..ACC-04 (implementation plan, section 8.5).
  *
- * ACC-01 is completed in later phases: it is checked here after allocation and calloc, the
- * length, copy, append and prepend operations extend it when they exist.
+ * ACC-01 is checked here after allocation and calloc and after each length operation. The copy,
+ * append and prepend operations extend it in phase 4.
  */
 #include <stddef.h>
 #include <stdint.h>
@@ -53,6 +53,38 @@ void test_ACC_01_view_after_alloc(void)
         TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
         TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(c));
     }
+}
+
+void test_ACC_01_view_after_length_operations(void)
+{
+    bloc_pool_t pool;
+    const size_t e = ts_element_size_aligned();
+    bloc_handle_t b;
+    size_t off;
+
+    ts_pool_setup(&pool, 2u, (bloc_size_t)e);
+    b = bloc_alloc(&pool, (bloc_size_t)(2u * PA));
+    TEST_ASSERT_NOT_NULL(b);
+    off = ts_round_up_pa(2u * PA);
+    check_view(&pool, b, off, 0u);
+
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_set_len(b, 10u));
+    check_view(&pool, b, off, 10u);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_set_len(b, (bloc_size_t)(e - off)));
+    check_view(&pool, b, off, e - off);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_set_len(b, 8u));
+    check_view(&pool, b, off, 8u);
+
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_add_header(b, (bloc_size_t)PA));
+    check_view(&pool, b, off - PA, 8u + PA);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_add_header(b, (bloc_size_t)(off - PA)));
+    check_view(&pool, b, 0u, 8u + off);
+
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_remove_header(b, 5u));
+    check_view(&pool, b, 5u, 3u + off);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_remove_header(b, (bloc_size_t)(3u + off)));
+    check_view(&pool, b, 5u + 3u + off, 0u);
+    TEST_ASSERT_EQUAL_INT(BLOC_OK, (int)bloc_release(b));
 }
 
 /* --- ACC-02 ------------------------------------------------------------------------------- */
@@ -128,6 +160,7 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_ACC_01_view_after_alloc);
+    RUN_TEST(test_ACC_01_view_after_length_operations);
 #if BLOC_CHECKS
     RUN_TEST(test_ACC_02_null_handle);
 #endif
