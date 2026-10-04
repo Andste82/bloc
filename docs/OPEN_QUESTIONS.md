@@ -133,6 +133,12 @@ the interpretation that was chosen and the tests it affects.
      which would need a multiplication helper on RV32I).
 - **Tests affected:** FC-01 (smoke check 2), ALLOC-08, DBG-* (handle validity), EM-03, XC-02 (debug
   rows).
+- **Resolution (2026-10-04):** OQ-005 is closed. (1) was a defect in the plan; plan section 9.8,
+  check 2 now expects `BLOC_HEADER_SIZE + BLOC_ALIGN_UP(8, BLOC_PAYLOAD_ALIGNMENT)`. (2) and (3) were
+  already resolved: ALLOC-08 calls `bloc_set_len`, and `BLOC_I_OVERLAPS` exists since phase 4 (plan
+  section 4.4 describes it since OQ-004). (4) is correct and equivalent; spec section 2 (revision 5)
+  now says that the division helpers serve steps 4 and 5 and why step 4 divides instead of
+  multiplying (RV32I would need `__mulsi3`).
 
 ## OQ-006 Deviations from the literal text of the plan in phase 4
 
