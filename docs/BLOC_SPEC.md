@@ -84,15 +84,15 @@ block start (aligned to BLOC_STORAGE_ALIGNMENT)
 
 - `BLOC_BLOCK_ALIGNMENT` (BA): minimum alignment of every block start, e.g. for DMA or cache-line rules.
 - `BLOC_PAYLOAD_ALIGNMENT` (PA): alignment of `data_start`. `1` disables payload alignment.
-- Both must be powers of two (checked with `_Static_assert`).
+- Both must be powers of two (checked with `BLOC_STATIC_ASSERT`, section 15).
 - They may differ. The effective block alignment is derived, so `BA < PA` is legal and still correct.
 
 ```c
 #define BLOC_STORAGE_ALIGNMENT \
-    BLOC_MAX3(BLOC_BLOCK_ALIGNMENT, BLOC_PAYLOAD_ALIGNMENT, _Alignof(struct bloc_handle))
+    BLOC_MAX3(BLOC_BLOCK_ALIGNMENT, BLOC_PAYLOAD_ALIGNMENT, BLOC_ALIGNOF(struct bloc_handle))
 ```
 
-`_Alignof(struct bloc_handle)` is included because the header contains a pointer. A misaligned header would fault on cores without unaligned access, e.g. Cortex-M0. All three operands are powers of two, so `BLOC_STORAGE_ALIGNMENT` is one too.
+`BLOC_ALIGNOF(struct bloc_handle)` is included because the header contains a pointer. A misaligned header would fault on cores without unaligned access, e.g. Cortex-M0. All three operands are powers of two, so `BLOC_STORAGE_ALIGNMENT` is one too.
 
 ### Payload alignment guarantee
 
@@ -121,7 +121,7 @@ pool_size    = N * block_stride
 #define BLOC_POOL_SIZE(n, e)       ((size_t)(n) * BLOC_BLOCK_STRIDE(e))
 
 #define BLOC_POOL_STORAGE(name, n, e) \
-    _Alignas(BLOC_STORAGE_ALIGNMENT) uint8_t name[BLOC_POOL_SIZE(n, e)]
+    BLOC_ALIGNAS(BLOC_STORAGE_ALIGNMENT) uint8_t name[BLOC_POOL_SIZE(n, e)]
 ```
 
 The largest valid element size is the one whose stride still fits `BLOC_SIZE_T`:
@@ -131,9 +131,9 @@ The largest valid element size is the one whose stride still fits `BLOC_SIZE_T`:
     (((size_t)BLOC_SIZE_MAX & ~((size_t)BLOC_STORAGE_ALIGNMENT - 1u)) - BLOC_HEADER_SIZE)
 ```
 
-Because the macros need `sizeof` and `_Alignof`, `struct bloc_handle` and `struct bloc_pool` are complete types in the public header. Their fields are private by convention; applications use only the API. lwIP does the same with `struct pbuf`.
+Because the macros need `sizeof` and `BLOC_ALIGNOF`, `struct bloc_handle` and `struct bloc_pool` are complete types in the public header. Their fields are private by convention; applications use only the API. lwIP does the same with `struct pbuf`.
 
-The storage base must be aligned to `BLOC_STORAGE_ALIGNMENT`. A plain `uint8_t` array has alignment 1, so callers should use `BLOC_POOL_STORAGE` or an equivalent `_Alignas`. `bloc_pool_init()` returns `BLOC_ALIGNMENT` for a misaligned base.
+The storage base must be aligned to `BLOC_STORAGE_ALIGNMENT`. A plain `uint8_t` array has alignment 1, so callers should use `BLOC_POOL_STORAGE` or an equivalent `BLOC_ALIGNAS` (`_Alignas` in C, `alignas` in C++). `bloc_pool_init()` returns `BLOC_ALIGNMENT` for a misaligned base.
 
 Placing handles in a byte array follows the lwIP `memp` idiom. The implementation accesses headers only through `struct bloc_handle` lvalues and payload only as bytes.
 
@@ -229,7 +229,7 @@ An application may route it to its own fault handler, logger or breakpoint. With
 
 ### Compile-time validation
 
-Each rule is enforced with `_Static_assert` or `#error` using exactly the message given, so build tests can match it.
+Each rule is enforced with `BLOC_STATIC_ASSERT` or `#error` using exactly the message given, so build tests can match it.
 
 | Rule | Message |
 | --- | --- |
@@ -606,6 +606,18 @@ No operation allocates memory, resizes a block or moves an existing payload.
 
 The complete V1 public API is 22 functions in seven groups (21 without `BLOC_STATS`). Public headers: `bloc.h` (API, types, layout macros) and `bloc_opt.h` (configuration defaults and validation).
 
+### C++ consumers
+
+The library is C11, but the public headers also compile as C++11 or later, so C++ code can use BLOC without a wrapper. `bloc.h` wraps its declarations in `extern "C"`. The headers need three C11 keywords that C++ spells differently; `bloc_opt.h` maps them with public helper macros, which applications may use too:
+
+| Macro | C11 | C++11 |
+| --- | --- | --- |
+| `BLOC_STATIC_ASSERT(cond, msg)` | `_Static_assert(cond, msg)` | `static_assert(cond, msg)` |
+| `BLOC_ALIGNAS(a)` | `_Alignas(a)` | `alignas(a)` |
+| `BLOC_ALIGNOF(t)` | `_Alignof(t)` | `alignof(t)` |
+
+A project configuration header (section 6) is included before the `extern "C"` block, so declarations in it that C++ code calls need their own `extern "C"`.
+
 ```c
 /* Pool lifecycle */
 bloc_status_t bloc_pool_init      (bloc_pool_t *pool, void *storage, size_t storage_size,
@@ -780,4 +792,4 @@ All 26 findings of the first review are resolved; four were design decisions by 
 | 2 | 2026-10-03 | Review resolved (Appendix B), API revised (section 15) |
 | 3 | 2026-10-03 | No-heap and libc dependency rules (section 2); `BLOC_ASSERT(x)` replaced by lwIP-style `BLOC_PLATFORM_ASSERT(msg)` with a libc-free trapping default; `BLOC_DEBUG` requires `BLOC_CHECKS`; exact static-assert messages; `BLOC_ELEMENT_SIZE_MAX` and `*_MAX` constants; pool unchanged on failed init; bail/continue semantics after a returning assertion; handle-validity steps and check order; asserts never under lock; runtime invariant assert reduced to the O(1) one; header split into `bloc.h` and `bloc_opt.h` |
 | 4 | 2026-10-03 | Code-size requirement with `.text` budgets for ARMv6-M and ARMv7-M (section 17); no compiler runtime helpers without `BLOC_DEBUG` (section 2); `bloc_pool_init` size check without division (section 7) |
-| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002); the headroom check of `bloc_alloc` must not overflow (section 8, OQ-003); the default assertion halts in an infinite loop on AVR, where `__builtin_trap()` would call `abort()` (section 6, OQ-004); new option `BLOC_ASSERT_MESSAGES` (section 6, 17) and toolchain startup symbols such as `__do_copy_data` (section 2, OQ-004); handle validity steps 4 and 5 use division and modulo, not multiplication (section 2, OQ-005); budgets tightened to the measured size plus about 20 % (section 17, OQ-006) |
+| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002); the headroom check of `bloc_alloc` must not overflow (section 8, OQ-003); the default assertion halts in an infinite loop on AVR, where `__builtin_trap()` would call `abort()` (section 6, OQ-004); new option `BLOC_ASSERT_MESSAGES` (section 6, 17) and toolchain startup symbols such as `__do_copy_data` (section 2, OQ-004); handle validity steps 4 and 5 use division and modulo, not multiplication (section 2, OQ-005); budgets tightened to the measured size plus about 20 % (section 17, OQ-006); C++ consumers and the helper macros `BLOC_STATIC_ASSERT`, `BLOC_ALIGNAS`, `BLOC_ALIGNOF` (section 15) |

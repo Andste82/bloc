@@ -137,7 +137,8 @@ build_cmake() { # host and emulated targets
     else
         cfg_args+=("-DCMAKE_C_COMPILER=$BLOC_CC")
         if [ -n "$BLOC_TARGET_FLAGS" ]; then
-            cfg_args+=("-DCMAKE_C_FLAGS=$BLOC_TARGET_FLAGS")
+            # The same flags for the C++ consumer test (CFG-12), e.g. -m32.
+            cfg_args+=("-DCMAKE_C_FLAGS=$BLOC_TARGET_FLAGS" "-DCMAKE_CXX_FLAGS=$BLOC_TARGET_FLAGS")
         fi
     fi
     if [ -n "$BLOC_EXPECT_PTR_BITS" ]; then

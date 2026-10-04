@@ -306,7 +306,7 @@ Contents, in this order:
 4. Preprocessor validation with `#error` and the exact messages from spec section 6:
    - `#if BLOC_DEBUG && !BLOC_CHECKS` → `#error "BLOC_DEBUG requires BLOC_CHECKS"`.
    - `#if BLOC_THREAD_SAFE && !(defined(BLOC_DECL_PROTECT) && defined(BLOC_PROTECT) && defined(BLOC_UNPROTECT))` → `#error "BLOC_THREAD_SAFE requires BLOC_DECL_PROTECT, BLOC_PROTECT and BLOC_UNPROTECT"`.
-5. `_Static_assert`s for the other rules in spec section 6 with the exact messages. Use a helper `#define BLOC_IS_POW2(x) ((x) != 0 && (((x) & ((x) - 1)) == 0))`.
+5. The helper macros `BLOC_STATIC_ASSERT`, `BLOC_ALIGNAS`, `BLOC_ALIGNOF` (spec section 15, C11 or C++ spelling), then `BLOC_STATIC_ASSERT`s for the other rules in spec section 6 with the exact messages. Use a helper `#define BLOC_IS_POW2(x) ((x) != 0 && (((x) & ((x) - 1)) == 0))`.
 
 ### 4.2 `src/include/bloc.h`
 
@@ -677,6 +677,7 @@ General requirements for **every** test:
 | CFG-09 | ALL | `BLOC_POOL_STORAGE` yields an array of the right size whose address is aligned to `BLOC_STORAGE_ALIGNMENT`. |
 | CFG-10 | ALL | Read-only API accepts `bloc_const_handle_t` (compile test: pass a const handle to every read-only function). |
 | CFG-11 | ALL | `bloc_status_t` values: `BLOC_OK == 0`, then `INVALID, BOUNDS, BUSY, OVERFLOW, ALIGNMENT` in that order; `BLOC_EMPTY` is not defined. |
+| CFG-12 | ALL | C++ consumer (`test/test_cpp.cpp`, spec section 15): the public headers compile as C++11 with `-Wall -Wextra -Wpedantic -Werror`; `BLOC_POOL_STORAGE` and `BLOC_POOL_SIZE` work at namespace scope and in a `static_assert`; init, alloc, append, accessors, release and deinit called from C++ give the expected results. Built in every host configuration when a C++ compiler is found (the C++ compiler matching the C compiler: `g++` for `gcc`, `clang++` for `clang`); not built for cross targets, whose toolchains have no C++ compiler in the CI images. |
 
 Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake target is `EXCLUDE_FROM_ALL`, and a CTest test builds it (`cmake --build . --target <cf>`) and passes only if the build output matches the given regex (`PASS_REGULAR_EXPRESSION`), so a failure for an unrelated reason is caught. Compile-fail targets use `-std=c11 -Werror` without `-Wpedantic`. They run in every build directory, so with both host compilers, and the regex must match the diagnostics of both GCC and Clang.
 
@@ -1054,7 +1055,7 @@ Steps: `apt_install.sh` (`id: install`) → `build_one.sh --versions <selector>`
 | 12 Thread safety | TS-01..04, POOL-22, ALLOC-16, REF-11, DBG-12 |
 | 13 Errors, validation | DBG-01..13, all CHK tests, CF-08, CF-11 |
 | 14 Invariants | MODEL-01..02, ALLOC-17, DBG-10 |
-| 15 API | CFG-10, CFG-11, CF-10 |
+| 15 API | CFG-10, CFG-11, CFG-12, CF-10 |
 | 17 Code size | FP-01..06, XC-02, CC-03 |
 | – (plan R-10, section 3.8: CMake, consumption) | CM-01..10 via FC-01..10 |
 | – (plan Q-08: compilers and architectures) | CC-01..04, EM-01..04, XC-01..05 |

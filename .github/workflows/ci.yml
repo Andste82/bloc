@@ -34,7 +34,7 @@ jobs:
         run: scripts/ci/apt_install.sh clang-format shellcheck
       - name: format
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: find src test examples -name '*.[ch]' -print0 | xargs -0 clang-format --dry-run --Werror
+        run: find src test examples \( -name '*.[ch]' -o -name '*.cpp' \) -print0 | xargs -0 clang-format --dry-run --Werror
       - name: shellcheck
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: shellcheck -x scripts/*.sh scripts/ci/*.sh
@@ -121,7 +121,7 @@ jobs:
           - { id: gcc-11,     image: 'ubuntu:22.04', cc: gcc,   packages: 'build-essential cmake ninja-build' }
           - { id: clang-14,   image: 'ubuntu:22.04', cc: clang, packages: 'clang lld cmake ninja-build' }
           - { id: gcc-15-m32, image: 'ubuntu:26.04', selector: host-gcc-m32, optconfigs: 'default', optbuildtypes: 'Release',
-              packages: 'build-essential gcc-multilib cmake ninja-build' }
+              packages: 'build-essential gcc-multilib g++-multilib cmake ninja-build' }
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/target
