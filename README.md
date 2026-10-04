@@ -22,7 +22,9 @@ and leaves out chaining and buffer types.
 - Compile-time block and payload alignment, and compile-time integer types for all fields.
 - Optional locking through application-supplied macros, no OS dependency.
 - Optional parameter checks, debug assertions and pool statistics, all removed when disabled.
-- Small: the whole API needs 860 bytes of `.text` on ARMv6-M (see Footprint).
+- Small: the whole API needs 762 bytes of `.text` on ARMv6-M and 706 on ARMv7-M, and unused
+  functions are removed by the linker (see Footprint).
+- Usable from C++: the headers compile as C++11 or later.
 
 ## The no-heap guarantee
 
@@ -44,16 +46,42 @@ macOS and Windows are not supported or tested in V1.
 
 ## Footprint
 
-`.text` of the complete API in bytes, measured by `scripts/check_size.sh` with `arm-none-eabi-gcc`,
-`-Os -mthumb -ffunction-sections -fdata-sections -std=c11`, no LTO. `.rodata`, `.data` and `.bss`
-are 0 in these configurations. The budgets come from section 17 of the specification.
+`.text` of the complete API in bytes, measured by `scripts/check_size.sh` on the library object
+(no LTO). `.rodata`, `.data` and `.bss` are 0 in these configurations. The budgets come from
+section 17 of the specification and are enforced in CI.
 
-| Configuration | Cortex-M0+ (ARMv6-M) | budget | Cortex-M3 (ARMv7-M) | budget |
-| --- | ---: | ---: | ---: | ---: |
-| `default` (checks on) | 860 | 1536 | 812 | 1280 |
-| `nochecks` (`BLOC_CHECKS` 0) | 626 | 1152 | 618 | 960 |
+| Target | Compiler | `default` (checks on) | `nochecks` (`BLOC_CHECKS` 0) |
+| --- | --- | ---: | ---: |
+| Cortex-M0+ (ARMv6-M) | GCC 14, `-Os` | **762** (budget 928) | **534** (budget 640) |
+| Cortex-M3 (ARMv7-M) | GCC 14, `-Os` | **706** (budget 864) | **508** (budget 608) |
+| Cortex-M4, A7, R5 (Thumb) | GCC 14, `-Os` | 706 | 508 |
+| Cortex-M0+ | Clang 21, `-Oz` | 814 | 548 |
+| Cortex-M3 | Clang 21, `-Oz` | 720 | 524 |
+| RV32IMAC | GCC 14, `-Os` | 944 | 718 |
+| RV32I (no multiplier, no divider) | GCC 14, `-Os` | 1408 | 1052 |
+| ATmega328P (AVR) | GCC 14, `-Os -fno-split-wide-types` | 1220 | 850 |
 
-The full table for every target and configuration is written to `build/size/report.md`.
+The full table for every target and configuration is written to `build/size/report.md`. Not
+included are `memcpy` and `memset` from your C library, which almost every firmware links anyway.
+
+You only pay for what you call. The `bloc` target is always compiled with `-ffunction-sections
+-fdata-sections`, so linking with `--gc-sections` removes every function you do not use: a program
+that only initializes a pool, allocates and releases keeps 232 of the 762 bytes on Cortex-M0+.
+
+Recommended flags for the smallest code (the optimization level is your choice; BLOC does not set
+it):
+
+| Compiler | Flags |
+| --- | --- |
+| GCC | `-Os` (`-Oz` gives the same result with GCC 14) |
+| Clang | `-Oz` (up to 19 % smaller than `-Os` on ARMv7-M) |
+| avr-gcc | `-Os -fno-split-wide-types` |
+| Linker | `-Wl,--gc-sections` |
+
+Avoid `-mcall-prologues` (AVR) and `-msave-restore` (RISC-V) for BLOC: they call libgcc helpers
+and make a linked image larger, not smaller. Debug builds for classic AVRs whose assertion handler
+uses its message should set `BLOC_ASSERT_MESSAGES` to `0`: the messages would otherwise occupy
+about 2.6 KiB of RAM.
 
 ## Quick start
 
@@ -131,8 +159,10 @@ FetchContent_MakeAvailable(bloc)
 target_link_libraries(my_app PRIVATE bloc::bloc)
 ```
 
-`add_subdirectory(path/to/bloc/src bloc)` works the same way; `src/` holds the whole library. To use a local checkout without network
-access, pass `-DFETCHCONTENT_SOURCE_DIR_BLOC=/path/to/bloc` when configuring your project.
+`add_subdirectory(path/to/bloc/src bloc)` works the same way; `src/` holds the whole library. To
+use a local checkout without network access, pass `-DFETCHCONTENT_SOURCE_DIR_BLOC=/path/to/bloc`
+when configuring your project. C++ code includes the same header, `bloc/bloc.h`; it needs no
+wrapper.
 
 Project options (set them before `FetchContent_MakeAvailable`):
 
@@ -185,7 +215,7 @@ ctest --preset gcc-default                 # presets also exist for clang-<cfg>,
 | --- | --- |
 | `scripts/run_all.sh [tier...]` | everything CI does, locally (tiers: gate host m32 emulated baremetal size coverage sanitize lto noheap fetchcontent) |
 | `scripts/ci/build_one.sh` | build and test one target, configuration and build type |
-| `scripts/coverage.sh [config...]` | GCC coverage; requires 100 % line, branch and function coverage of `src/bloc.c` in each of the six gated configurations (HTML reports in `build/coverage/`) |
+| `scripts/coverage.sh [config...]` | GCC coverage; requires 100 % line, branch and function coverage of `src/bloc.c` in each of the six gated configurations (HTML reports and JSON summaries in `build/coverage/`; the summaries feed the coverage badge) |
 | `scripts/sanitize.sh [--cc gcc\|clang] [--tsan] [config...]` | AddressSanitizer and UBSan over the gated configurations; `--tsan` runs the `pthread` configuration under ThreadSanitizer |
 | `scripts/cross_check.sh` | cross-compile matrix of the bare-metal targets with symbol checks |
 | `scripts/check_size.sh` | footprint report, budgets and regression baseline |
