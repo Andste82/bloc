@@ -47,13 +47,12 @@ macOS and Windows are not supported or tested in V1.
 ## Footprint
 
 `.text` of the complete API in bytes, measured by `scripts/check_size.sh` on the library object
-(no LTO). `.rodata`, `.data` and `.bss` are 0 in these configurations. The budgets come from
-section 17 of the specification and are enforced in CI.
+(no LTO). `.rodata`, `.data` and `.bss` are 0 in these configurations.
 
 | Target | Compiler | `default` (checks on) | `nochecks` (`BLOC_CHECKS` 0) |
 | --- | --- | ---: | ---: |
-| Cortex-M0+ (ARMv6-M) | GCC 14, `-Os` | **762** (budget 928) | **534** (budget 640) |
-| Cortex-M3 (ARMv7-M) | GCC 14, `-Os` | **706** (budget 864) | **508** (budget 608) |
+| Cortex-M0+ (ARMv6-M) | GCC 14, `-Os` | **762** | **534** |
+| Cortex-M3 (ARMv7-M) | GCC 14, `-Os` | **706** | **508** |
 | Cortex-M4, A7, R5 (Thumb) | GCC 14, `-Os` | 706 | 508 |
 | Cortex-M0+ | Clang 21, `-Oz` | 814 | 548 |
 | Cortex-M3 | Clang 21, `-Oz` | 720 | 524 |
