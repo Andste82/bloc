@@ -108,6 +108,21 @@ logged() {
     return 1
 }
 
+last_build_dir=""
+
+# "N tests" from the ctest log of the current build, plus a note when the C++ consumer test
+# (CFG-12) was not built. Empty with --no-test.
+ctest_summary() {
+    local log="$last_build_dir/ctest.log" n
+    [ "$no_test" -eq 0 ] && [ -f "$log" ] || return 0
+    n="$(sed -n 's/.*tests failed out of \([0-9][0-9]*\).*/\1/p' "$log" | tail -n 1)"
+    if grep -q 'test_cpp' "$log"; then
+        echo "${n:-?} tests"
+    else
+        echo "${n:-?} tests, no C++ test"
+    fi
+}
+
 report() { # status target config type [note]
     printf '%s %s %s %s%s\n' "$1" "$2" "$3" "$4" "${5:+ ($5)}"
 }
@@ -130,6 +145,7 @@ build_cmake() { # host and emulated targets
     # CMake discards the cache (and with it -DBLOC_TEST_CONFIG etc.) when the compiler changes.
     [ "$BLOC_KIND" = emulated ] || cdir="/$(basename "$BLOC_CC")"
     dir="$root/build/ci/$target$cdir/$config-$build_type$suffix"
+    last_build_dir="$dir" # read by ctest_summary
     local cfg_args=(-S "$root" -B "$dir" -G Ninja "-DCMAKE_BUILD_TYPE=$build_type"
         "-DBLOC_TEST_CONFIG=$config")
     if [ "$BLOC_KIND" = emulated ]; then
@@ -316,7 +332,7 @@ run_target() {
             return 0
         fi
     elif build_cmake "$target"; then
-        report PASS "$target" "$config" "$build_type"
+        report PASS "$target" "$config" "$build_type" "$(ctest_summary)"
         return 0
     fi
     report FAIL "$target" "$config" "$build_type"
