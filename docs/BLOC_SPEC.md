@@ -604,11 +604,15 @@ No operation allocates memory, resizes a block or moves an existing payload.
 
 ## 15. V1 API summary
 
-The complete V1 public API is 22 functions in seven groups (21 without `BLOC_STATS`). Public headers: `bloc.h` (API, types, layout macros) and `bloc_opt.h` (configuration defaults and validation).
+The complete V1 public API is 22 functions in seven groups (21 without `BLOC_STATS`). Public headers: `bloc/bloc.h` (API, types, layout macros) and `bloc/bloc_opt.h` (configuration defaults and validation), in the `bloc/` directory of the include path. Applications include only `bloc/bloc.h`:
+
+```c
+#include "bloc/bloc.h"
+```
 
 ### C++ consumers
 
-The library is C11, but the public headers also compile as C++11 or later, so C++ code can use BLOC without a wrapper. `bloc.h` wraps its declarations in `extern "C"`. The headers need three C11 keywords that C++ spells differently; `bloc_opt.h` maps them with public helper macros, which applications may use too:
+The library is C11, but the public headers also compile as C++11 or later, so C++ code can use BLOC without a wrapper. `bloc/bloc.h` wraps its declarations in `extern "C"`. The headers need three C11 keywords that C++ spells differently; `bloc_opt.h` maps them with public helper macros, which applications may use too:
 
 | Macro | C11 | C++11 |
 | --- | --- | --- |
@@ -792,4 +796,4 @@ All 26 findings of the first review are resolved; four were design decisions by 
 | 2 | 2026-10-03 | Review resolved (Appendix B), API revised (section 15) |
 | 3 | 2026-10-03 | No-heap and libc dependency rules (section 2); `BLOC_ASSERT(x)` replaced by lwIP-style `BLOC_PLATFORM_ASSERT(msg)` with a libc-free trapping default; `BLOC_DEBUG` requires `BLOC_CHECKS`; exact static-assert messages; `BLOC_ELEMENT_SIZE_MAX` and `*_MAX` constants; pool unchanged on failed init; bail/continue semantics after a returning assertion; handle-validity steps and check order; asserts never under lock; runtime invariant assert reduced to the O(1) one; header split into `bloc.h` and `bloc_opt.h` |
 | 4 | 2026-10-03 | Code-size requirement with `.text` budgets for ARMv6-M and ARMv7-M (section 17); no compiler runtime helpers without `BLOC_DEBUG` (section 2); `bloc_pool_init` size check without division (section 7) |
-| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002); the headroom check of `bloc_alloc` must not overflow (section 8, OQ-003); the default assertion halts in an infinite loop on AVR, where `__builtin_trap()` would call `abort()` (section 6, OQ-004); new option `BLOC_ASSERT_MESSAGES` (section 6, 17) and toolchain startup symbols such as `__do_copy_data` (section 2, OQ-004); handle validity steps 4 and 5 use division and modulo, not multiplication (section 2, OQ-005); budgets tightened to the measured size plus about 20 % (section 17, OQ-006); C++ consumers and the helper macros `BLOC_STATIC_ASSERT`, `BLOC_ALIGNAS`, `BLOC_ALIGNOF` (section 15) |
+| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002); the headroom check of `bloc_alloc` must not overflow (section 8, OQ-003); the default assertion halts in an infinite loop on AVR, where `__builtin_trap()` would call `abort()` (section 6, OQ-004); new option `BLOC_ASSERT_MESSAGES` (section 6, 17) and toolchain startup symbols such as `__do_copy_data` (section 2, OQ-004); handle validity steps 4 and 5 use division and modulo, not multiplication (section 2, OQ-005); budgets tightened to the measured size plus about 20 % (section 17, OQ-006); C++ consumers and the helper macros `BLOC_STATIC_ASSERT`, `BLOC_ALIGNAS`, `BLOC_ALIGNOF` (section 15); public headers in a `bloc/` directory, included as `bloc/bloc.h` (section 15) |

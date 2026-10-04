@@ -80,7 +80,7 @@ bloc/
 ├── src/                           the library: the only directory a consumer needs (section 3.8)
 │   ├── CMakeLists.txt             library target bloc / bloc::bloc, no project()
 │   ├── bloc.c                     the whole implementation
-│   └── include/
+│   └── include/bloc/              public headers, included as "bloc/bloc.h"
 │       ├── bloc.h                 public API, types, layout macros
 │       └── bloc_opt.h             configuration defaults and compile-time validation
 ├── examples/
@@ -178,7 +178,7 @@ The host compiler is chosen with the preset (`CMAKE_C_COMPILER`), not with an op
 
 Targets:
 
-- `bloc` — the only target defined when BLOC is consumed: static library from `src/bloc.c`, defined in `src/CMakeLists.txt`, public include dir `src/include/`, alias `bloc::bloc`. Rules in section 3.8.
+- `bloc` — the only target defined when BLOC is consumed: static library from `src/bloc.c`, defined in `src/CMakeLists.txt`, public include dir `src/include/` (headers in `src/include/bloc/`, included as `"bloc/bloc.h"`), alias `bloc::bloc`. Rules in section 3.8.
 - `bloc_test_support` — static library from `test/support/*.c` (tests only).
 - one executable per `test/test_*.c`, each linking `bloc::bloc`, `bloc_test_support` and `unity`, each registered with `add_test` (tests only).
 - `compile_fail_*` targets (section 8.1, tests only).
@@ -296,7 +296,7 @@ The files `src/CMakeLists.txt` and `CMakeLists.txt` are the reference for the de
 
 ## 4. Code architecture
 
-### 4.1 `src/include/bloc_opt.h`
+### 4.1 `src/include/bloc/bloc_opt.h`
 
 Contents, in this order:
 
@@ -308,7 +308,7 @@ Contents, in this order:
    - `#if BLOC_THREAD_SAFE && !(defined(BLOC_DECL_PROTECT) && defined(BLOC_PROTECT) && defined(BLOC_UNPROTECT))` → `#error "BLOC_THREAD_SAFE requires BLOC_DECL_PROTECT, BLOC_PROTECT and BLOC_UNPROTECT"`.
 5. The helper macros `BLOC_STATIC_ASSERT`, `BLOC_ALIGNAS`, `BLOC_ALIGNOF` (spec section 15, C11 or C++ spelling), then `BLOC_STATIC_ASSERT`s for the other rules in spec section 6 with the exact messages. Use a helper `#define BLOC_IS_POW2(x) ((x) != 0 && (((x) & ((x) - 1)) == 0))`.
 
-### 4.2 `src/include/bloc.h`
+### 4.2 `src/include/bloc/bloc.h`
 
 Contents, in this order:
 
@@ -328,7 +328,7 @@ Contents, in this order:
 
 ```c
 #include <string.h>
-#include "bloc.h"
+#include "bloc/bloc.h"
 
 #if BLOC_DEBUG
 #  define BLOC_I_FAIL(msg)              BLOC_PLATFORM_ASSERT(msg)
@@ -872,7 +872,7 @@ Compile-fail tests: each is a tiny `.c` file plus a config header; the CMake tar
 | --- | --- |
 | NH-01 | Host check (the cross-target equivalent is XC-02). Build the library in release mode (`-O2`, no coverage, no sanitizers, `-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0`; Ubuntu's GCC enables fortification by default, which would turn `memcpy` into `__memcpy_chk`) for configurations `default` and `debug`. Run `nm -u` on the object file. The set of undefined symbols must be a subset of `{memcpy, memset}` (plus the test hooks `ts_assert_fail`, `ts_lock_enter`, `ts_lock_exit` in `debug`). Any other symbol fails the check, and the script prints it. |
 | NH-02 | Same check for a `debug` build that uses the **default** `BLOC_PLATFORM_ASSERT` (no test hook): undefined symbols ⊆ `{memcpy, memset}`. This proves the trapping default needs no C library. |
-| NH-03 | `grep` over the C sources and headers in `src/` finds no `#include` other than `bloc.h`, `bloc_opt.h`, `<stddef.h>`, `<stdint.h>`, `<stdbool.h>`, `<string.h>`, and no occurrence of `malloc`, `calloc`, `realloc`, `aligned_alloc`, `free(`, `memmove`, `alloca` (not even in comments, so the check stays a plain grep; `bloc_calloc` is matched as a whole word and allowed). |
+| NH-03 | `grep` over the C sources and headers in `src/` finds no `#include` other than `"bloc/bloc.h"` (in `src/bloc.c`), `"bloc_opt.h"` (in `bloc.h`), `<stddef.h>`, `<stdint.h>`, `<stdbool.h>`, `<string.h>`, and no occurrence of `malloc`, `calloc`, `realloc`, `aligned_alloc`, `free(`, `memmove`, `alloca` (not even in comments, so the check stays a plain grep; `bloc_calloc` is matched as a whole word and allowed). |
 
 ### 9.2 Sanitizers (`scripts/sanitize.sh`)
 
@@ -1075,7 +1075,7 @@ Work:
 - `test/fetchcontent_smoke/` with the full `CMakeLists.txt` (FetchContent block and FC-02 assertions), `config/smoke_opts.h`, the bare-metal toolchain file, and a `main.c` that for now only uses compile-time macros (e.g. `_Static_assert(BLOC_POOL_SIZE(4, 64) > 0, "")`) and returns 0; `scripts/fetchcontent_smoke.sh` with all variants.
 - Test support library (section 5) complete, with its own self-tests (`test_support.c`: guard band detection, assertion bookkeeping, lock tracer errors).
 - All seven `test/configs/cfg_*.h`.
-- Stub `src/include/bloc.h`, `src/include/bloc_opt.h`, `src/bloc.c` and `src/CMakeLists.txt`. An empty translation unit is not valid ISO C under `-Wpedantic`, so the stub `bloc.c` contains one internal declaration, e.g. `typedef int bloc_i_translation_unit_not_empty;`.
+- Stub `src/include/bloc/bloc.h`, `src/include/bloc/bloc_opt.h`, `src/bloc.c` and `src/CMakeLists.txt`. An empty translation unit is not valid ISO C under `-Wpedantic`, so the stub `bloc.c` contains one internal declaration, e.g. `typedef int bloc_i_translation_unit_not_empty;`.
 - `scripts/*.sh` skeletons, including `cross_check.sh` (loop over the bare-metal targets of `target_table.sh`) and `check_size.sh` (report only). Also `.clang-format`, `.github/workflows/ci.yml` and `.github/actions/target/action.yml` with every job of section 10.2. Jobs whose tests do not exist yet run but are informational (not in `ci-ok.needs`) until their phase. The footprint step is informational until phase 4.
 
 DoD: `ctest` runs `test_support` green in all configurations with GCC and Clang, on the 32-bit host and on every tier-1E target (EM-04 passes, so each emulated job runs the right architecture); `cross_check.sh` compiles the stub `bloc.c` for every tier-2 target; FC-02, FC-06, FC-07 and FC-08 pass with the macro-only `main.c`; the CI pipeline runs end to end, and `ci-ok` is green.

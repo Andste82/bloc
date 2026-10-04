@@ -10,7 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "bloc.h"
+#include "bloc/bloc.h"
 
 #define LS_UP(x, a) ((((uintmax_t)(x) + (uintmax_t)(a) - 1u) / (uintmax_t)(a)) * (uintmax_t)(a))
 #define LS_MAXU(a, b) ((uintmax_t)(a) > (uintmax_t)(b) ? (uintmax_t)(a) : (uintmax_t)(b))

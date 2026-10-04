@@ -8,7 +8,7 @@
  */
 #include <string.h>
 
-#include "bloc.h"
+#include "bloc/bloc.h"
 
 #if BLOC_DEBUG && BLOC_ASSERT_MESSAGES
 #define BLOC_I_FAIL(msg) BLOC_PLATFORM_ASSERT(msg)

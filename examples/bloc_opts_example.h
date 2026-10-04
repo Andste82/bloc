@@ -4,8 +4,8 @@
  * Copy this file into your project, rename it (for example bloc_opts.h) and select it with the
  * CMake options BLOC_CONFIG_HEADER and BLOC_CONFIG_DIRS (see README.md). The header must be seen
  * by the bloc target and by every consumer: never define BLOC_CONFIG_HEADER on your own target
- * only. Every option is optional; the defaults are in src/include/bloc_opt.h and are documented in
- * section 6 of docs/BLOC_SPEC.md.
+ * only. Every option is optional; the defaults are in src/include/bloc/bloc_opt.h and are
+ * documented in section 6 of docs/BLOC_SPEC.md.
  *
  * The values below describe a small network stack on a microcontroller: statistics for pool
  * sizing, assertions for programming errors and 8-byte aligned blocks.

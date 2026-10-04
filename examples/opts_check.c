@@ -2,7 +2,7 @@
  * Compiles the sample configuration header together with the public header, so that the sample
  * stays valid. Built only in a top-level build of the project (never linked).
  */
-#include "bloc.h"
+#include "bloc/bloc.h"
 
 /* A declaration is enough: the unit is only compiled, and it keeps the translation unit non-empty.
  */

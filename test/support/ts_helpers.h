@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "bloc.h"
+#include "bloc/bloc.h"
 #include "ts_assert.h"
 #include "ts_lock.h"
 

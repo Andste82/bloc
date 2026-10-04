@@ -228,6 +228,33 @@ jobs:
         env:
           BLOC_GIT_TAG: ${{ github.sha }}
 
+  # ---------------------------------------------------------------- coverage badge
+  # Publishes the shields.io endpoint document for the README badge to the orphan branch "badges"
+  # (one force-pushed commit). Pushes to main only, and not part of ci-ok.
+  badge:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with: { name: coverage-html, path: coverage }
+      - run: scripts/ci/coverage_badge.sh coverage > coverage.json
+      - name: publish to the badges branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir badge && mv coverage.json badge/ && cd badge
+          git init -q -b badges
+          git add coverage.json
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -q -m "coverage badge for ${GITHUB_SHA}"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" badges
+
   # ---------------------------------------------------------------- required check
   ci-ok:
     if: always()

@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <cstring>
 
-#include "bloc.h"
+#include "bloc/bloc.h"
 #include "unity.h"
 
 namespace

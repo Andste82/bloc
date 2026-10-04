@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#include "bloc.h"
+#include "bloc/bloc.h"
 #include "unity.h"
 
 struct ts_region {

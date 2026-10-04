@@ -40,7 +40,7 @@ rc=0
 check_grep() {
     local bad
     bad="$(grep -rnE '^[[:space:]]*#[[:space:]]*include' --include='*.[ch]' src |
-        grep -vE '#[[:space:]]*include[[:space:]]+(<(stddef|stdint|stdbool|string)\.h>|"bloc(_opt)?\.h"|BLOC_CONFIG_HEADER)' ||
+        grep -vE '#[[:space:]]*include[[:space:]]+(<(stddef|stdint|stdbool|string)\.h>|"(bloc/bloc|bloc_opt)\.h"|BLOC_CONFIG_HEADER)' ||
         true)"
     if [ -n "$bad" ]; then
         echo "NH-03 FAIL: forbidden #include:" >&2

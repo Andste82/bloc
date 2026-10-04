@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "bloc.h"
+#include "bloc/bloc.h"
 
 #define TS_SNAP_MAX ((size_t)8192u)
 

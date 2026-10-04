@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "bloc.h"
+#include "bloc/bloc.h"
 
 static BLOC_POOL_STORAGE(g_storage, 2, 16);
 static bloc_pool_t g_pool;

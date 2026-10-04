@@ -1,6 +1,7 @@
 # BLOC
 
 [![CI](https://github.com/Andste82/bloc/actions/workflows/ci.yml/badge.svg)](https://github.com/Andste82/bloc/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Andste82/bloc/badges/coverage.json)](https://github.com/Andste82/bloc/actions/workflows/ci.yml)
 
 **Buffer Lifetime & Offset Control**: deterministic, heap-free, fixed-block buffers with reference
 counting and zero-copy headroom, written in C11 for embedded systems and host programs.
@@ -57,7 +58,7 @@ The full table for every target and configuration is written to `build/size/repo
 ## Quick start
 
 ```c
-#include "bloc.h"
+#include "bloc/bloc.h"
 
 #define PACKET_COUNT 8u
 #define PACKET_SIZE  128u
@@ -105,7 +106,7 @@ sample project configuration header is in
 Buffers with more than one reference are read-only: the functions that change a buffer
 (`bloc_set_len`, `bloc_add_header`, `bloc_remove_header`, `bloc_copy_from`, `bloc_append*`,
 `bloc_prepend*`) require a reference count of 1. The API is documented with Doxygen comments in
-[`src/include/bloc.h`](src/include/bloc.h); the behaviour is specified in
+[`src/include/bloc/bloc.h`](src/include/bloc/bloc.h); the behaviour is specified in
 [`docs/BLOC_SPEC.md`](docs/BLOC_SPEC.md).
 
 ## Using BLOC in your CMake project
@@ -151,7 +152,7 @@ target as a PUBLIC definition, so the library and every consumer see the same co
 
 ## Configuration
 
-All options have defaults in [`src/include/bloc_opt.h`](src/include/bloc_opt.h) and are overridden in
+All options have defaults in [`src/include/bloc/bloc_opt.h`](src/include/bloc/bloc_opt.h) and are overridden in
 your own header. Section 6 of [`docs/BLOC_SPEC.md`](docs/BLOC_SPEC.md#6-compile-time-configuration)
 describes them in full, including the compile-time validation messages.
 

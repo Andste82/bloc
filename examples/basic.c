@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "bloc.h"
+#include "bloc/bloc.h"
 
 #define PACKET_COUNT 4u
 #define PACKET_SIZE 64u

@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "bloc.h"
+#include "bloc/bloc.h"
 #include "ts_arena.h"
 #include "ts_helpers.h"
 #include "unity.h"

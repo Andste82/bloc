@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "bloc.h"
+#include "bloc/bloc.h"
 
 #define SMOKE_COUNT 4
 #define SMOKE_ELEMENT 64

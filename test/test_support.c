@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "bloc.h"
+#include "bloc/bloc.h"
 #include "ts_arena.h"
 #include "ts_assert.h"
 #include "ts_helpers.h"
