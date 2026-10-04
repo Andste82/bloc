@@ -430,7 +430,9 @@ UNLOCK; return BLOC_OK
 
 ```text
 CHECK pool != NULL                                  → NULL
-CHECK pool->storage != NULL                         → NULL
+CHECK pool->storage != NULL                         → NULL   (only with DEBUG, STATS or THREAD_SAFE:
+                                                    otherwise the empty free list of an
+                                                    uninitialized pool already gives NULL)
 if headroom > align_down(element_size, PA): return NULL   (no assert, no lock, no stat;
                                                  overflow-free form of spec 8 step 2)
 off = BLOC_ALIGN_UP(headroom, BLOC_PAYLOAD_ALIGNMENT)          (cannot wrap any more)
@@ -450,7 +452,7 @@ return b
 
 With `BLOC_CHECKS = 0` an uninitialized pool reaches the empty-list branch and returns `NULL`; that is acceptable.
 
-**`bloc_calloc`**: `b = bloc_alloc(pool, headroom)`; if `b != NULL` then `memset(bloc_i_data_start(b), 0, pool->element_size)`; return `b`.
+**`bloc_calloc`**: `b = bloc_alloc(pool, headroom)`; if `b != NULL` then `memset(bloc_i_data_start(b), 0, element_size)` and return the handle recovered from the `memset` result (no value lives across the call, see OQ-004).
 
 **`bloc_retain`**
 
@@ -495,13 +497,13 @@ In the copy, append and prepend functions `memcpy` is the **last** action: after
 
 **`bloc_copy_to`**: pointer checks (`src`, `dst`); `CHECK pos <= len → BOUNDS`; `CHECK n <= len - pos → BOUNDS`; `memcpy(dst, data_start + offset + pos, n)` (no field changes).
 
-**`bloc_copy`**: pointer checks (`dst`, `src`); `if dst == src return BLOC_OK`; `CHECK src->len <= dst_element_size - dst->offset → BOUNDS`; shared-mutation assert on `dst`; `dst->len = src->len`; `memcpy`.
+**`bloc_copy`**: pointer checks (`dst`, `src`); `if dst == src return BLOC_OK`; `return bloc_copy_from(dst, src_payload, src->len)`, which checks the bounds against the destination, asserts on a shared destination and copies.
 
-**`bloc_append`**: pointer checks (`dst`, `src`); `CHECK n <= src->len → BOUNDS`; `CHECK n <= tailroom(dst) → BOUNDS`; shared-mutation assert on `dst`; compute `to = dst_payload_end` and `from = src_payload`; `dst->len += n`; `memcpy(to, from, n)`.
+**`bloc_append`**: pointer checks (`dst`, `src`); `CHECK n <= src->len → BOUNDS`; `return bloc_append_data(dst, src_payload, n)` (tailroom check, shared-mutation assert, update, copy). The overlap check there cannot fire for a BLOC source (spec section 11).
 
 **`bloc_append_data`**: pointer checks (`dst`, `src`); `CHECK n <= tailroom → BOUNDS`; `DEBUG overlap → INVALID`; shared-mutation assert; compute the destination pointer; `len += n`; `memcpy`.
 
-**`bloc_prepend`**: pointer checks (`dst`, `src`); `CHECK n <= src->len → BOUNDS`; `CHECK n <= dst->offset → BOUNDS`; shared-mutation assert; compute `from = src_payload` and `to = dst_payload - n`; `dst->offset -= n; dst->len += n`; `memcpy(to, from, n)`. For `src == dst` the source pointer must be computed **before** the offset changes.
+**`bloc_prepend`**: pointer checks (`dst`, `src`); `CHECK n <= src->len → BOUNDS`; `return bloc_prepend_data(dst, src_payload, n)`. For `src == dst` the source pointer is computed **before** the offset changes, because it is an argument of the call.
 
 **`bloc_prepend_data`**: as `bloc_prepend` with an external source (pointer checks on `dst`, `src`), plus the debug overlap check after the bounds checks.
 
@@ -509,7 +511,7 @@ In the copy, append and prepend functions `memcpy` is the **last** action: after
 
 These rules implement spec section 17. Their effect is measured (section 9.5), not assumed.
 
-- Factor out repeated address arithmetic: `bloc_i_data_start`, plus `bloc_i_payload(b)` = data start + offset. Copy, append and prepend share one internal routine for the common "bounds known, `memcpy`, update `offset`/`len`" step where that measurably reduces size. Do not merge public functions into one dispatcher with a mode argument: that would defeat dead-stripping (FP-05).
+- Factor out repeated address arithmetic: `bloc_i_data_start`, plus `bloc_i_payload(b)` = data start + offset. The BLOC-source variants share the body of their external-source variant by calling it (spec section 17, rule 2): `bloc_copy` → `bloc_copy_from`, `bloc_append` → `bloc_append_data`, `bloc_prepend` → `bloc_prepend_data`, and `bloc_calloc` → `bloc_alloc`. Static helpers for this purpose were measured and GCC inlines them into both callers, so they save nothing. Do not merge public functions into one dispatcher with a mode argument: that would defeat dead-stripping (FP-05).
 - Keep error exits cheap: return status codes directly and avoid duplicated unlock/return sequences. A single exit label per protected section is acceptable if it reduces size.
 - Avoid `size_t` arithmetic where `bloc_size_t` is provably sufficient: on ARM both are 32-bit, but on AVR `size_t` widening costs instructions. Overflow-safe subtraction-form checks (spec section 13) need no widening.
 - Avoid loads of 64-bit constants and avoid `switch` statements that generate tables in `.rodata` (FP-03).

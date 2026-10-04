@@ -113,6 +113,7 @@ bloc_status_t bloc_pool_init(bloc_pool_t *pool, void *storage, size_t storage_si
                              bloc_count_t element_count, bloc_size_t element_size)
 {
     struct bloc_handle *b;
+    struct bloc_handle *next;
     uint8_t *base;
     size_t stride;
     size_t rem;
@@ -130,7 +131,7 @@ bloc_status_t bloc_pool_init(bloc_pool_t *pool, void *storage, size_t storage_si
     /* Exact size check without multiplication or division: subtract one stride per element. */
     stride = BLOC_BLOCK_STRIDE(element_size);
     rem = storage_size;
-    for (i = 0u; i < element_count; i++) {
+    for (i = element_count; i != 0u; i--) {
         BLOC_I_REQUIRE(rem >= stride, "bloc_pool_init: storage_size too small", BLOC_BOUNDS);
         rem -= stride;
     }
@@ -144,13 +145,16 @@ bloc_status_t bloc_pool_init(bloc_pool_t *pool, void *storage, size_t storage_si
     /* Everything is valid: only now write anything. */
     base = (uint8_t *)storage;
     pool->storage = base;
-    pool->free_head = (struct bloc_handle *)(void *)base;
-    for (off = 0u; off < span; off += stride) {
+    /* Link the blocks from the last to the first, so that block 0 ends up as the head. */
+    next = NULL;
+    for (off = span; off != 0u;) {
+        off -= stride;
         b = (struct bloc_handle *)(void *)(base + off);
         b->refcount = 0u;
-        b->link.next_free =
-            (off + stride < span) ? (struct bloc_handle *)(void *)(base + off + stride) : NULL;
+        b->link.next_free = next;
+        next = b;
     }
+    pool->free_head = next;
 
     pool->element_size = element_size;
     pool->block_stride = (bloc_size_t)stride;
@@ -220,11 +224,7 @@ bloc_status_t bloc_pool_get_stats(const bloc_pool_t *pool, bloc_pool_stats_t *ou
 
 /* --- Allocation --------------------------------------------------------------------------- */
 
-/*
- * Shared body of bloc_alloc and bloc_calloc. The zero fill is done here, after the lock is
- * released, so that bloc_calloc stays a plain tail call.
- */
-static bloc_handle_t bloc_i_alloc(bloc_pool_handle_t pool, bloc_size_t headroom, bool zero)
+bloc_handle_t bloc_alloc(bloc_pool_handle_t pool, bloc_size_t headroom)
 {
     struct bloc_handle *b;
     size_t off;
@@ -235,7 +235,13 @@ static bloc_handle_t bloc_i_alloc(bloc_pool_handle_t pool, bloc_size_t headroom,
     BLOC_I_LOCK_DECL(lev);
 
     BLOC_I_CHECK(pool != NULL, "bloc_alloc: pool is NULL", NULL);
+#if BLOC_DEBUG || BLOC_STATS || BLOC_THREAD_SAFE
+    /*
+     * An uninitialized pool has an empty free list, so without debug assertions, statistics and
+     * locking the empty-list path below already returns NULL for it.
+     */
     BLOC_I_CHECK(pool->storage != NULL, "bloc_alloc: pool is not initialized", NULL);
+#endif
 
     /*
      * The offset is the headroom rounded up to BLOC_PAYLOAD_ALIGNMENT, and it must not exceed
@@ -280,27 +286,25 @@ static bloc_handle_t bloc_i_alloc(bloc_pool_handle_t pool, bloc_size_t headroom,
         BLOC_I_FAIL("bloc_alloc: active_count invariant");
     }
 #endif
-    if (zero) {
-        /*
-         * memset returns its destination, and the handle is recovered from it instead of being
-         * kept in a register across the call: a value that lives across the call makes GCC for
-         * PowerPC emit a libgcc register restore helper, which R-03 does not allow.
-         */
-        uint8_t *data = (uint8_t *)memset(bloc_i_data_start(b), 0, (size_t)pool->element_size);
-
-        return (bloc_handle_t)(uintptr_t)(data - BLOC_HEADER_SIZE);
-    }
     return b;
-}
-
-bloc_handle_t bloc_alloc(bloc_pool_handle_t pool, bloc_size_t headroom)
-{
-    return bloc_i_alloc(pool, headroom, false);
 }
 
 bloc_handle_t bloc_calloc(bloc_pool_handle_t pool, bloc_size_t headroom)
 {
-    return bloc_i_alloc(pool, headroom, true);
+    bloc_handle_t b = bloc_alloc(pool, headroom);
+    uint8_t *data;
+
+    if (b == NULL) {
+        return NULL;
+    }
+    /*
+     * The zero fill runs after the lock was released. memset returns its destination, and the
+     * handle is recovered from it instead of being kept in a register across the call: a value
+     * that lives across the call makes GCC for PowerPC emit a libgcc register restore helper,
+     * which R-03 does not allow.
+     */
+    data = (uint8_t *)memset(bloc_i_data_start(b), 0, (size_t)b->link.pool->element_size);
+    return (bloc_handle_t)(uintptr_t)(data - BLOC_HEADER_SIZE);
 }
 
 /* --- Reference counting ------------------------------------------------------------------- */
@@ -465,6 +469,12 @@ bloc_status_t bloc_remove_header(bloc_handle_t b, bloc_size_t n)
  * after it. All checks have passed by then, so the order is not observable, and no value has to
  * live across the call: a handle that does makes GCC for PowerPC emit a libgcc register restore
  * helper (_restgpr_*) at -Os, which R-03 does not allow (see OQ-004).
+ *
+ * The BLOC-source variants (bloc_copy, bloc_append, bloc_prepend) run their own NULL, validity and
+ * source checks and then call the external-source variant with the source payload, which runs the
+ * destination checks and copies. This shares one copy body per pair instead of two (spec section
+ * 17). The overlap check of the external-source variant cannot fire for them: distinct blocks never
+ * overlap, and the self-copy ranges of spec section 11 are disjoint.
  */
 
 bloc_status_t bloc_copy_from(bloc_handle_t dst, const void *src, bloc_size_t n)
@@ -504,9 +514,6 @@ bloc_status_t bloc_copy_to(bloc_const_handle_t src, void *dst, bloc_size_t n, bl
 
 bloc_status_t bloc_copy(bloc_handle_t dst, bloc_const_handle_t src)
 {
-    uint8_t *p;
-    bloc_size_t n;
-
     BLOC_I_CHECK(dst != NULL, "bloc_copy: dst is NULL", BLOC_INVALID);
     BLOC_I_CHECK(src != NULL, "bloc_copy: src is NULL", BLOC_INVALID);
 #if BLOC_DEBUG
@@ -516,21 +523,11 @@ bloc_status_t bloc_copy(bloc_handle_t dst, bloc_const_handle_t src)
     if (dst == src) {
         return BLOC_OK;
     }
-    BLOC_I_CHECK((size_t)src->len <= (size_t)dst->link.pool->element_size - dst->offset,
-                 "bloc_copy: src len exceeds the space after offset", BLOC_BOUNDS);
-    BLOC_I_SHARED_MUTATION(dst, "bloc_copy: buffer is shared");
-    p = bloc_i_payload(dst);
-    n = src->len;
-    dst->len = (bloc_size_t)n;
-    (void)memcpy(p, bloc_i_payload(src), n);
-    return BLOC_OK;
+    return bloc_copy_from(dst, bloc_i_payload(src), src->len);
 }
 
 bloc_status_t bloc_append(bloc_handle_t dst, bloc_const_handle_t src, bloc_size_t n)
 {
-    uint8_t *p;
-    const uint8_t *s;
-
     BLOC_I_CHECK(dst != NULL, "bloc_append: dst is NULL", BLOC_INVALID);
     BLOC_I_CHECK(src != NULL, "bloc_append: src is NULL", BLOC_INVALID);
 #if BLOC_DEBUG
@@ -538,14 +535,7 @@ bloc_status_t bloc_append(bloc_handle_t dst, bloc_const_handle_t src, bloc_size_
     BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(src), "bloc_append: invalid src handle", BLOC_INVALID);
 #endif
     BLOC_I_CHECK(n <= src->len, "bloc_append: n exceeds src len", BLOC_BOUNDS);
-    BLOC_I_CHECK((size_t)n <= (size_t)dst->link.pool->element_size - dst->offset - dst->len,
-                 "bloc_append: n exceeds tailroom", BLOC_BOUNDS);
-    BLOC_I_SHARED_MUTATION(dst, "bloc_append: buffer is shared");
-    p = bloc_i_payload(dst) + dst->len;
-    s = bloc_i_payload(src);
-    dst->len = (bloc_size_t)(dst->len + n);
-    (void)memcpy(p, s, n);
-    return BLOC_OK;
+    return bloc_append_data(dst, bloc_i_payload(src), n);
 }
 
 bloc_status_t bloc_append_data(bloc_handle_t dst, const void *src, bloc_size_t n)
@@ -572,9 +562,6 @@ bloc_status_t bloc_append_data(bloc_handle_t dst, const void *src, bloc_size_t n
 
 bloc_status_t bloc_prepend(bloc_handle_t dst, bloc_const_handle_t src, bloc_size_t n)
 {
-    uint8_t *p;
-    const uint8_t *s;
-
     BLOC_I_CHECK(dst != NULL, "bloc_prepend: dst is NULL", BLOC_INVALID);
     BLOC_I_CHECK(src != NULL, "bloc_prepend: src is NULL", BLOC_INVALID);
 #if BLOC_DEBUG
@@ -582,15 +569,8 @@ bloc_status_t bloc_prepend(bloc_handle_t dst, bloc_const_handle_t src, bloc_size
     BLOC_I_REQUIRE(BLOC_I_HANDLE_VALID(src), "bloc_prepend: invalid src handle", BLOC_INVALID);
 #endif
     BLOC_I_CHECK(n <= src->len, "bloc_prepend: n exceeds src len", BLOC_BOUNDS);
-    BLOC_I_CHECK(n <= dst->offset, "bloc_prepend: n exceeds headroom", BLOC_BOUNDS);
-    BLOC_I_SHARED_MUTATION(dst, "bloc_prepend: buffer is shared");
     /* The source pointer is computed from the offset before it changes (src may be dst). */
-    s = bloc_i_payload(src);
-    p = bloc_i_payload(dst) - n;
-    dst->offset = (bloc_size_t)(dst->offset - n);
-    dst->len = (bloc_size_t)(dst->len + n);
-    (void)memcpy(p, s, n);
-    return BLOC_OK;
+    return bloc_prepend_data(dst, bloc_i_payload(src), n);
 }
 
 bloc_status_t bloc_prepend_data(bloc_handle_t dst, const void *src, bloc_size_t n)
