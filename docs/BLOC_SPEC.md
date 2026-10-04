@@ -692,12 +692,12 @@ On ARM, literal pools are part of `.text` and so count against the budget.
 
 ### Budgets
 
-The budgets are upper bounds for the reference compiler. An implementation that exceeds them is defective. The implementation plan adds a stricter regression baseline that may only shrink unless an increase is justified.
+The budgets are upper bounds for the reference compiler. An implementation that exceeds them is defective. They leave about 20 % above the measured size of the V1 implementation (860, 626, 812 and 618 bytes with `arm-none-eabi-gcc` 14.2), so that compiler updates and small changes fit, while a real regression does not. The implementation plan adds a stricter regression baseline that may only shrink unless an increase is justified.
 
 | Configuration | ARMv6-M (Cortex-M0+) | ARMv7-M (Cortex-M3) |
 | --- | --- | --- |
-| Defaults (`BLOC_CHECKS = 1`, `BLOC_DEBUG = 0`, `BLOC_STATS = 0`, `BLOC_THREAD_SAFE = 0`) | ≤ 1536 bytes | ≤ 1280 bytes |
-| Defaults with `BLOC_CHECKS = 0` | ≤ 1152 bytes | ≤ 960 bytes |
+| Defaults (`BLOC_CHECKS = 1`, `BLOC_DEBUG = 0`, `BLOC_STATS = 0`, `BLOC_THREAD_SAFE = 0`) | ≤ 1024 bytes | ≤ 960 bytes |
+| Defaults with `BLOC_CHECKS = 0` | ≤ 768 bytes | ≤ 768 bytes |
 
 Configurations with `BLOC_DEBUG`, `BLOC_STATS` or `BLOC_THREAD_SAFE` enabled, and other targets (ARMv7E-M, ARMv7-A/R Thumb, RV32, AVR), are measured and reported but have no budget.
 
@@ -780,4 +780,4 @@ All 26 findings of the first review are resolved; four were design decisions by 
 | 2 | 2026-10-03 | Review resolved (Appendix B), API revised (section 15) |
 | 3 | 2026-10-03 | No-heap and libc dependency rules (section 2); `BLOC_ASSERT(x)` replaced by lwIP-style `BLOC_PLATFORM_ASSERT(msg)` with a libc-free trapping default; `BLOC_DEBUG` requires `BLOC_CHECKS`; exact static-assert messages; `BLOC_ELEMENT_SIZE_MAX` and `*_MAX` constants; pool unchanged on failed init; bail/continue semantics after a returning assertion; handle-validity steps and check order; asserts never under lock; runtime invariant assert reduced to the O(1) one; header split into `bloc.h` and `bloc_opt.h` |
 | 4 | 2026-10-03 | Code-size requirement with `.text` budgets for ARMv6-M and ARMv7-M (section 17); no compiler runtime helpers without `BLOC_DEBUG` (section 2); `bloc_pool_init` size check without division (section 7) |
-| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002); the headroom check of `bloc_alloc` must not overflow (section 8, OQ-003); the default assertion halts in an infinite loop on AVR, where `__builtin_trap()` would call `abort()` (section 6, OQ-004); new option `BLOC_ASSERT_MESSAGES` (section 6, 17) and toolchain startup symbols such as `__do_copy_data` (section 2, OQ-004); handle validity steps 4 and 5 use division and modulo, not multiplication (section 2, OQ-005) |
+| 5 | 2026-10-03 | Resolved open questions of the implementation: section 14 states when the runtime invariant check runs and what it catches (OQ-002); the headroom check of `bloc_alloc` must not overflow (section 8, OQ-003); the default assertion halts in an infinite loop on AVR, where `__builtin_trap()` would call `abort()` (section 6, OQ-004); new option `BLOC_ASSERT_MESSAGES` (section 6, 17) and toolchain startup symbols such as `__do_copy_data` (section 2, OQ-004); handle validity steps 4 and 5 use division and modulo, not multiplication (section 2, OQ-005); budgets tightened to the measured size plus about 20 % (section 17, OQ-006) |

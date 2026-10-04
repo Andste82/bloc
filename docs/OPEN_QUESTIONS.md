@@ -167,3 +167,9 @@ the interpretation that was chosen and the tests it affects.
      nochecks 626 of 1152; cortex-m3 default 812 of 1280, nochecks 618 of 960), so the baseline was
      created from the first measured values.
 - **Tests affected:** XC-02, XC-03 (Clang rows), EM-03 (powerpc), FP-02, FP-04, DBG-08.
+- **Resolution (2026-10-04):** OQ-006 is closed. (1) and (2) were already covered by the OQ-004
+  plan updates (section 3.3, CM-02, section 4.4). (3) is correct; plan section 4.5 now shows
+  `memcpy` as the last action and why. (4) is correct; plan section 9.5 now says that the host rows
+  are gated like the others. (5) Decided by the owner: spec section 17 (revision 5) tightens the
+  budgets to the measured size plus about 20 % (cortex-m0plus 1024 / 768, cortex-m3 960 / 768
+  bytes for default / nochecks), and `scripts/check_size.sh` enforces them (FP-02).

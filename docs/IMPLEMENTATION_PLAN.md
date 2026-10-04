@@ -489,17 +489,19 @@ return BLOC_OK
 
 **`bloc_remove_header`**: pointer checks (`b`); `CHECK n <= len → BOUNDS`; shared-mutation assert; `offset += n; len -= n`.
 
-**`bloc_copy_from`**: pointer checks (`dst`, `src`); `CHECK n <= element_size - offset → BOUNDS`; `DEBUG: REQUIRE !overlaps(src, n, data_start + offset) → INVALID`; shared-mutation assert; `memcpy`; `len = n`.
+In the copy, append and prepend functions `memcpy` is the **last** action: after all checks the function computes the source and destination pointers, updates the destination's `len` and `offset`, and then calls `memcpy`. This is not observable, because all checks have passed and `memcpy` cannot fail. In the opposite order the handle is still needed after the call, and GCC for PowerPC then emits the libgcc register save/restore helpers `_savegpr_*`/`_restgpr_*` at `-Os`, which R-03 forbids (EM-03).
 
-**`bloc_copy_to`**: pointer checks (`src`, `dst`); `CHECK pos <= len → BOUNDS`; `CHECK n <= len - pos → BOUNDS`; `memcpy(dst, data_start + offset + pos, n)`.
+**`bloc_copy_from`**: pointer checks (`dst`, `src`); `CHECK n <= element_size - offset → BOUNDS`; `DEBUG: REQUIRE !overlaps(src, n, data_start + offset) → INVALID`; shared-mutation assert; `len = n`; `memcpy`.
 
-**`bloc_copy`**: pointer checks (`dst`, `src`); `if dst == src return BLOC_OK`; `CHECK src->len <= dst_element_size - dst->offset → BOUNDS`; shared-mutation assert on `dst`; `memcpy`; `dst->len = src->len`.
+**`bloc_copy_to`**: pointer checks (`src`, `dst`); `CHECK pos <= len → BOUNDS`; `CHECK n <= len - pos → BOUNDS`; `memcpy(dst, data_start + offset + pos, n)` (no field changes).
 
-**`bloc_append`**: pointer checks (`dst`, `src`); `CHECK n <= src->len → BOUNDS`; `CHECK n <= tailroom(dst) → BOUNDS`; shared-mutation assert on `dst`; `memcpy(dst_payload_end, src_payload, n)`; `dst->len += n`.
+**`bloc_copy`**: pointer checks (`dst`, `src`); `if dst == src return BLOC_OK`; `CHECK src->len <= dst_element_size - dst->offset → BOUNDS`; shared-mutation assert on `dst`; `dst->len = src->len`; `memcpy`.
 
-**`bloc_append_data`**: pointer checks (`dst`, `src`); `CHECK n <= tailroom → BOUNDS`; `DEBUG overlap → INVALID`; shared-mutation assert; `memcpy`; `len += n`.
+**`bloc_append`**: pointer checks (`dst`, `src`); `CHECK n <= src->len → BOUNDS`; `CHECK n <= tailroom(dst) → BOUNDS`; shared-mutation assert on `dst`; compute `to = dst_payload_end` and `from = src_payload`; `dst->len += n`; `memcpy(to, from, n)`.
 
-**`bloc_prepend`**: pointer checks (`dst`, `src`); `CHECK n <= src->len → BOUNDS`; `CHECK n <= dst->offset → BOUNDS`; shared-mutation assert; `memcpy(dst_payload - n, src_payload, n)`; `dst->offset -= n; dst->len += n`. For `src == dst` the source pointer must be computed **before** the offset changes.
+**`bloc_append_data`**: pointer checks (`dst`, `src`); `CHECK n <= tailroom → BOUNDS`; `DEBUG overlap → INVALID`; shared-mutation assert; compute the destination pointer; `len += n`; `memcpy`.
+
+**`bloc_prepend`**: pointer checks (`dst`, `src`); `CHECK n <= src->len → BOUNDS`; `CHECK n <= dst->offset → BOUNDS`; shared-mutation assert; compute `from = src_payload` and `to = dst_payload - n`; `dst->offset -= n; dst->len += n`; `memcpy(to, from, n)`. For `src == dst` the source pointer must be computed **before** the offset changes.
 
 **`bloc_prepend_data`**: as `bloc_prepend` with an external source (pointer checks on `dst`, `src`), plus the debug overlap check after the bounds checks.
 
@@ -905,7 +907,7 @@ The script loops over the tier-2 rows of section 3.6 × the applicable configura
 Measurement follows spec section 17. The script compiles `src/bloc.c` for each target, compiler and configuration in the table below. It records `.text`, `.rodata`, `.data` and `.bss` of the object (summing all `*.text*` and `*.rodata*` input sections), plus per-function sizes from `nm --size-sort`.
 
 Measured matrix:
-- Targets: all tier-2 targets of section 3.6, plus host x86-64 for information.
+- Targets: all tier-2 targets of section 3.6, plus host x86-64. The host rows are gated like every other row (FP-03, FP-04); because FP-04 only compares rows whose compiler version matches the baseline, they do not fail on machines with another host compiler.
 - Configurations: `default` (no config header) and `nochecks`, which carry the spec budgets on ARM; also `debug` with the default assert, `wide` (except AVR), and a thread-safe configuration `cfg_size_ts.h` that defines PRIMASK-based protect macros with inline assembly, as in spec section 12 (ARM M-profile only).
 
 | ID | Requirement |
