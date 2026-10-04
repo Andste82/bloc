@@ -3,7 +3,8 @@
 #
 #   check_size.sh [--family <name>] [--write-baseline]
 #
-# Compiles src/bloc.c with -Os -ffunction-sections -fdata-sections for every bare-metal target and
+# Compiles src/bloc.c with bloc_size_opt_flags (GCC -Os, Clang -Oz, avr-gcc also
+# -fno-split-wide-types; -ffunction-sections -fdata-sections) for every bare-metal target and
 # a set of configurations, and writes a Markdown table of .text, .rodata, .data and .bss to
 # build/size/report.md (build/size/report-<family>.md with --family). The table is also printed.
 # Gates (the script exits non-zero if one fails):
@@ -148,9 +149,10 @@ dead_strip_check() { # target full-api-text
         bloc_prepend bloc_prepend_data"
     mkdir -p "$dir"
     elf="$dir/min_app.elf"
-    local target_flags
+    local target_flags opt_flags
     read -r -a target_flags <<<"$BLOC_TARGET_FLAGS"
-    if ! "$BLOC_CC" "${target_flags[@]}" -std=c11 -Os -ffunction-sections -fdata-sections \
+    read -r -a opt_flags <<<"$(bloc_size_opt_flags "$BLOC_CCID" "$BLOC_CC")"
+    if ! "$BLOC_CC" "${target_flags[@]}" -std=c11 "${opt_flags[@]}" \
         -I"$root/src/include" "$root/src/bloc.c" "$root/test/size/min_app.c" -o "$elf" \
         -Wl,--gc-sections --specs=nosys.specs >"$dir/link.log" 2>&1; then
         cat "$dir/link.log" >&2
@@ -185,7 +187,7 @@ measure() { # target label config
     local target="$1" label="$2" cfg="$3"
     local dir="$outdir/$target/$label" flags cfg_flags=() obj="$outdir/$target/$label/bloc.o"
     mkdir -p "$dir"
-    flags="$(bloc_library_warning_flags "$BLOC_CCID") -Os -ffunction-sections -fdata-sections"
+    flags="$(bloc_library_warning_flags "$BLOC_CCID") $(bloc_size_opt_flags "$BLOC_CCID" "$BLOC_CC")"
     flags="$flags $BLOC_TARGET_FLAGS"
     [ -n "$BLOC_ISYSTEM" ] && flags="$flags -isystem $BLOC_ISYSTEM"
     flags="$flags -I$root/src/include"

@@ -197,7 +197,7 @@ GCC additionally: `-Wcast-align=strict` (replaces `-Wcast-align`). Clang additio
 
 Tests: `-std=c11 -Wall -Wextra -Wpedantic -Werror` (no `-Wconversion`). Unity itself is compiled without `-Werror`.
 
-Cross targets (section 3.6) use the library flags above plus the target flags, `-Os -ffunction-sections -fdata-sections`, and `-ffreestanding` only for the static layout checks in `test/target/`. GCC targets also use `-Wcast-align=strict`. Clang cross builds get the C library headers through `-isystem` (newlib: `/usr/lib/arm-none-eabi/include`; picolibc: `/usr/lib/picolibc/riscv64-unknown-elf/include`), because the GNU toolchains report no usable `-print-sysroot`.
+Cross targets (section 3.6) use the library flags above plus the target flags, the size flags of `bloc_size_opt_flags` in `scripts/ci/target_table.sh` (GCC `-Os`, Clang `-Oz`, avr-gcc additionally `-fno-split-wide-types`, all with `-ffunction-sections -fdata-sections`; spec section 17), and `-ffreestanding` only for the static layout checks in `test/target/`. GCC targets also use `-Wcast-align=strict`. Clang cross builds get the C library headers through `-isystem` (newlib: `/usr/lib/arm-none-eabi/include`; picolibc: `/usr/lib/picolibc/riscv64-unknown-elf/include`), because the GNU toolchains report no usable `-print-sysroot`.
 
 `-Wcast-qual` is intentionally not enabled: `bloc_data()` is the single sanctioned place that removes `const` (spec section 10); mark it with a comment.
 
@@ -282,7 +282,7 @@ The files `src/CMakeLists.txt` and `CMakeLists.txt` are the reference for the de
 | ID | Rule |
 | --- | --- |
 | CM-01 | The consumer-visible result of `FetchContent_MakeAvailable(bloc)` (with `SOURCE_SUBDIR src`) with default options is exactly one buildable target, `bloc` (STATIC), with the alias `bloc::bloc`. No other targets, no subdirectories, no tests, no Unity download. Consumers link `bloc::bloc`. |
-| CM-02 | Usage requirements of `bloc` are exactly: the `src/include/` directory (`BUILD_INTERFACE`), the compile feature `c_std_11`, and, if configured, the `BLOC_CONFIG_HEADER` definition plus `BLOC_CONFIG_DIRS`. `INTERFACE_LINK_LIBRARIES` and `INTERFACE_COMPILE_OPTIONS` are empty: warning, coverage, sanitizer and LTO flags, and Clang's `-fno-builtin-memset -fno-builtin-memcpy`, are PRIVATE or test-only and never reach the consumer. |
+| CM-02 | Usage requirements of `bloc` are exactly: the `src/include/` directory (`BUILD_INTERFACE`), the compile feature `c_std_11`, and, if configured, the `BLOC_CONFIG_HEADER` definition plus `BLOC_CONFIG_DIRS`. `INTERFACE_LINK_LIBRARIES` and `INTERFACE_COMPILE_OPTIONS` are empty: warning, coverage, sanitizer and LTO flags, Clang's `-fno-builtin-memset -fno-builtin-memcpy` and the section flags `-ffunction-sections -fdata-sections` (spec section 17) are PRIVATE or test-only and never reach the consumer. |
 | CM-03 | No global side effects. BLOC's CMake code never calls `add_compile_options`, `add_link_options`, `add_definitions`, `include_directories`, `link_libraries` or `include(CTest)`, never sets `CMAKE_C_FLAGS*`, `CMAKE_C_STANDARD`, `CMAKE_BUILD_TYPE`, `CMAKE_*_OUTPUT_DIRECTORY` or `CMAKE_POSITION_INDEPENDENT_CODE`, and never writes `PARENT_SCOPE` variables. All flags are set per target. |
 | CM-04 | Namespace hygiene. Cache entries created by `src/CMakeLists.txt` start with `BLOC_`; it calls no `project()`, so there are no `bloc_*` or `CMAKE_PROJECT_VERSION*` entries. Test-only options (`BLOC_TEST_CONFIG`, `BLOC_COVERAGE`, `BLOC_SANITIZE`, `BLOC_LTO`) exist only in a top-level build. |
 | CM-05 | Location independence. Inside BLOC's CMake files, paths are built from `CMAKE_CURRENT_SOURCE_DIR` or `CMAKE_CURRENT_BINARY_DIR` (`src/CMakeLists.txt` uses only these), or `bloc_SOURCE_DIR` in the top-level file; `CMAKE_SOURCE_DIR` and `CMAKE_BINARY_DIR` appear only in the top-level detection. |
@@ -905,7 +905,7 @@ The script loops over the tier-2 rows of section 3.6 × the applicable configura
 
 ### 9.5 Code footprint (`scripts/check_size.sh`)
 
-Measurement follows spec section 17. The script compiles `src/bloc.c` for each target, compiler and configuration in the table below. It records `.text`, `.rodata`, `.data` and `.bss` of the object (summing all `*.text*` and `*.rodata*` input sections), plus per-function sizes from `nm --size-sort`.
+Measurement follows spec section 17. The script compiles `src/bloc.c` for each target, compiler and configuration in the table below, with the same size flags as the cross builds (`bloc_size_opt_flags`). It records `.text`, `.rodata`, `.data` and `.bss` of the object (summing all `*.text*` and `*.rodata*` input sections), plus per-function sizes from `nm --size-sort`.
 
 Measured matrix:
 - Targets: all tier-2 targets of section 3.6, plus host x86-64. The host rows are gated like every other row (FP-03, FP-04); because FP-04 only compares rows whose compiler version matches the baseline, they do not fail on machines with another host compiler.

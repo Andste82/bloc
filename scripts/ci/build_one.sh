@@ -228,7 +228,7 @@ build_baremetal() {
     local target="$1" dir="$root/build/ci/$1/$config"
     local flags cfg_flags=() expected msg debug_cfg=0 cc_flags cfg_header=""
     mkdir -p "$dir"
-    flags="$(bloc_library_warning_flags "$BLOC_CCID") -Os -ffunction-sections -fdata-sections"
+    flags="$(bloc_library_warning_flags "$BLOC_CCID") $(bloc_size_opt_flags "$BLOC_CCID" "$BLOC_CC")"
     flags="$flags $BLOC_TARGET_FLAGS"
     if [ -n "$BLOC_ISYSTEM" ]; then
         flags="$flags -isystem $BLOC_ISYSTEM"

@@ -48,7 +48,12 @@ target_compile_options(bloc PRIVATE
   # targets, but the library may reference only memcpy and memset (R-03). PRIVATE, so it never
   # reaches a consumer (CM-02).
   $<$<C_COMPILER_ID:Clang>:-fno-builtin-memset>
-  $<$<C_COMPILER_ID:Clang>:-fno-builtin-memcpy>)
+  $<$<C_COMPILER_ID:Clang>:-fno-builtin-memcpy>
+  # One section per function and object, so that a consumer linking with --gc-sections keeps only
+  # the functions it calls (spec section 17, rule 2), whatever flags the consumer uses itself.
+  # The optimization level stays the consumer's choice.
+  $<$<C_COMPILER_ID:GNU,Clang>:-ffunction-sections>
+  $<$<C_COMPILER_ID:GNU,Clang>:-fdata-sections>)
 if(BLOC_WERROR)
   target_compile_options(bloc PRIVATE $<$<C_COMPILER_ID:GNU,Clang>:-Werror>)
 endif()

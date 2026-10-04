@@ -176,6 +176,20 @@ bloc_target() {
     return 0
 }
 
+# Optimization and section flags of the bare-metal builds and the footprint measurement (spec
+# section 17): the smallest safe setting per compiler. GCC: -Os (-Oz is identical with GCC 14).
+# Clang: -Oz (17-19 % smaller than -Os on ARMv7-M). avr-gcc also -fno-split-wide-types (3-4 %
+# smaller, no ABI change, no runtime helpers). Not used: -mcall-prologues (AVR) and -msave-restore
+# (RISC-V), which call libgcc helpers that spec section 2 forbids and grow a linked image.
+bloc_size_opt_flags() { # compiler-id(gcc|clang) compiler
+    local flags="-Os"
+    [ "$1" = clang ] && flags="-Oz"
+    case "$2" in
+    *avr-gcc*) flags="$flags -fno-split-wide-types" ;;
+    esac
+    echo "$flags -ffunction-sections -fdata-sections"
+}
+
 # Library warning flags of section 3.3 for a compiler id (gcc | clang).
 bloc_library_warning_flags() {
     local flags="-std=c11 -Wall -Wextra -Wpedantic -Werror -Wconversion -Wsign-conversion -Wshadow"
