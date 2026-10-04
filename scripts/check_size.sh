@@ -88,10 +88,10 @@ compiler_version() { # compiler
 # Spec section 17 budgets (FP-02): "target config budget".
 budget_of() { # target config
     case "$1:$2" in
-    cm0plus-gcc:default) echo 1024 ;;
-    cm0plus-gcc:nochecks) echo 768 ;;
-    cm3-gcc:default) echo 960 ;;
-    cm3-gcc:nochecks) echo 768 ;;
+    cm0plus-gcc:default) echo 928 ;;
+    cm0plus-gcc:nochecks) echo 640 ;;
+    cm3-gcc:default) echo 864 ;;
+    cm3-gcc:nochecks) echo 608 ;;
     *) echo "" ;;
     esac
 }

@@ -173,3 +173,5 @@ the interpretation that was chosen and the tests it affects.
   are gated like the others. (5) Decided by the owner: spec section 17 (revision 5) tightens the
   budgets to the measured size plus about 20 % (cortex-m0plus 1024 / 768, cortex-m3 960 / 768
   bytes for default / nochecks), and `scripts/check_size.sh` enforces them (FP-02).
+  After the size-reduction pass of 2026-10-04 the owner tightened them again to the new measured
+  size plus about 20 %: cortex-m0plus 928 / 640, cortex-m3 864 / 608 bytes.
