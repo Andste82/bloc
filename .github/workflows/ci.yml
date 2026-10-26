@@ -68,7 +68,12 @@ jobs:
     name: sanitize / ${{ matrix.cc }}
     needs: lint
     runs-on: ubuntu-latest
-    container: ubuntu:26.04
+    container:
+      image: ubuntu:26.04
+      # Docker's default seccomp profile blocks personality(ADDR_NO_RANDOMIZE), so neither
+      # setarch -R in sanitize.sh nor TSan itself can disable ASLR on hosts with
+      # vm.mmap_rnd_bits=32 (the ubuntu-26.04 runner image).
+      options: --security-opt seccomp=unconfined
     timeout-minutes: 30
     strategy:
       fail-fast: false
